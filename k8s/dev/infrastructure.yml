@@ -17,6 +17,7 @@ spec:
       labels:
         app: postgres
     spec:
+      enableServiceLinks: false
       containers:
         - name: postgres
           image: postgres:16
@@ -71,6 +72,7 @@ spec:
       labels:
         app: neo4j
     spec:
+      enableServiceLinks: false
       containers:
         - name: neo4j
           image: neo4j:5.26
@@ -117,6 +119,7 @@ spec:
       labels:
         app: zookeeper
     spec:
+      enableServiceLinks: false
       containers:
         - name: zookeeper
           image: confluentinc/cp-zookeeper:7.6.0
@@ -158,6 +161,7 @@ spec:
       labels:
         app: kafka
     spec:
+      enableServiceLinks: false
       containers:
         - name: kafka
           image: confluentinc/cp-kafka:7.6.0
@@ -207,6 +211,7 @@ spec:
       labels:
         app: redis
     spec:
+      enableServiceLinks: false
       containers:
         - name: redis
           image: redis:7.2
@@ -243,6 +248,7 @@ spec:
       labels:
         app: openldap
     spec:
+      enableServiceLinks: false
       containers:
         - name: openldap
           image: osixia/openldap:1.5.0
