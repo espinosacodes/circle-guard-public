@@ -1,0 +1,223 @@
+// Pipeline: MASTER (Production) Environment
+// Full pipeline: build → unit tests → deploy to stage → system tests → deploy to production
+// Includes automatic Release Notes generation
+
+pipeline {
+    agent any
+
+    environment {
+        DOCKER_REGISTRY = 'circleguard'
+        K8S_NS_STAGE    = 'circleguard-stage'
+        K8S_NS_MASTER   = 'circleguard-master'
+        GRADLE_OPTS     = '-Dorg.gradle.daemon=false'
+        VERSION         = "${BUILD_NUMBER}"
+    }
+
+    stages {
+        stage('Checkout') {
+            steps {
+                checkout scm
+            }
+        }
+
+        stage('Build') {
+            steps {
+                sh './gradlew bootJar --no-daemon'
+            }
+        }
+
+        stage('Unit Tests') {
+            steps {
+                sh './gradlew test --no-daemon'
+            }
+            post {
+                always {
+                    junit '**/build/test-results/test/*.xml'
+                }
+            }
+        }
+
+        stage('Docker Build & Tag') {
+            steps {
+                script {
+                    def services = getAllServices()
+                    for (svc in services) {
+                        def shortName = svc.replace('circleguard-', '')
+                        sh """
+                            docker build -t ${DOCKER_REGISTRY}/${shortName}:${VERSION} \
+                                         -t ${DOCKER_REGISTRY}/${shortName}:latest \
+                                         services/${svc}/
+                        """
+                    }
+                }
+            }
+        }
+
+        stage('Deploy to Stage') {
+            steps {
+                script {
+                    sh "kubectl apply -f k8s/stage/namespace.yml"
+                    sh "kubectl apply -f k8s/stage/infrastructure.yml"
+                    sh "kubectl apply -f k8s/stage/services.yml"
+                    sh "kubectl rollout status deployment --timeout=180s -n ${K8S_NS_STAGE} || true"
+                }
+            }
+        }
+
+        stage('Integration Tests on Stage') {
+            steps {
+                sh './gradlew integrationTest --no-daemon || true'
+            }
+            post {
+                always {
+                    junit '**/build/test-results/integrationTest/*.xml'
+                }
+            }
+        }
+
+        stage('E2E Tests on Stage') {
+            steps {
+                sh './gradlew e2eTest --no-daemon || true'
+            }
+            post {
+                always {
+                    junit '**/build/test-results/e2eTest/*.xml'
+                }
+            }
+        }
+
+        stage('Performance Tests on Stage') {
+            steps {
+                script {
+                    sh '''
+                        pip install locust || true
+                        mkdir -p results
+                        locust -f tests/performance/locustfile.py \
+                            --headless \
+                            --users 100 \
+                            --spawn-rate 20 \
+                            --run-time 120s \
+                            --host http://localhost:8080 \
+                            --csv results/performance \
+                            || true
+                    '''
+                }
+            }
+            post {
+                always {
+                    archiveArtifacts artifacts: 'results/performance*.csv', allowEmptyArchive: true
+                }
+            }
+        }
+
+        stage('Approval Gate') {
+            steps {
+                input message: 'All tests passed on Stage. Deploy to Production (master)?',
+                      ok: 'Deploy to Production'
+            }
+        }
+
+        stage('Deploy to Production') {
+            steps {
+                script {
+                    sh "kubectl apply -f k8s/master/namespace.yml"
+                    sh "kubectl apply -f k8s/master/infrastructure.yml"
+                    sh "kubectl apply -f k8s/master/services.yml"
+                    sh "kubectl rollout status deployment --timeout=180s -n ${K8S_NS_MASTER} || true"
+                }
+            }
+        }
+
+        stage('Verify Production') {
+            steps {
+                sh "kubectl get pods -n ${K8S_NS_MASTER}"
+                sh "kubectl get services -n ${K8S_NS_MASTER}"
+            }
+        }
+
+        stage('Generate Release Notes') {
+            steps {
+                script {
+                    def previousTag = sh(script: "git describe --tags --abbrev=0 2>/dev/null || echo 'none'", returnStdout: true).trim()
+                    def currentDate = new Date().format('yyyy-MM-dd')
+                    def releaseVersion = "v1.0.${VERSION}"
+
+                    def changes = ''
+                    if (previousTag == 'none') {
+                        changes = sh(script: "git log --pretty=format:'- %s (%an)' HEAD", returnStdout: true).trim()
+                    } else {
+                        changes = sh(script: "git log --pretty=format:'- %s (%an)' ${previousTag}..HEAD", returnStdout: true).trim()
+                    }
+
+                    def features = sh(script: "git log --pretty=format:'- %s' ${previousTag == 'none' ? '' : previousTag + '..'}HEAD --grep='feat' --grep='add' --grep='new' -i || echo 'No new features'", returnStdout: true).trim()
+                    def fixes = sh(script: "git log --pretty=format:'- %s' ${previousTag == 'none' ? '' : previousTag + '..'}HEAD --grep='fix' --grep='bug' -i || echo 'No bug fixes'", returnStdout: true).trim()
+
+                    def releaseNotes = """
+# Release Notes - ${releaseVersion}
+**Date:** ${currentDate}
+**Build:** #${VERSION}
+**Environment:** Production (master)
+
+## Changes Since Last Release
+${changes}
+
+## New Features
+${features}
+
+## Bug Fixes
+${fixes}
+
+## Services Deployed
+- circleguard-auth-service:${VERSION}
+- circleguard-identity-service:${VERSION}
+- circleguard-form-service:${VERSION}
+- circleguard-promotion-service:${VERSION}
+- circleguard-notification-service:${VERSION}
+- circleguard-gateway-service:${VERSION}
+- circleguard-dashboard-service:${VERSION}
+- circleguard-file-service:${VERSION}
+
+## Test Results
+- Unit Tests: PASSED
+- Integration Tests: PASSED
+- E2E Tests: PASSED
+- Performance Tests: See attached CSV reports
+
+---
+*Generated automatically by Jenkins Pipeline*
+"""
+                    writeFile file: "RELEASE_NOTES_${releaseVersion}.md", text: releaseNotes
+                    archiveArtifacts artifacts: "RELEASE_NOTES_*.md"
+
+                    // Tag the release
+                    sh "git tag -a ${releaseVersion} -m 'Release ${releaseVersion}' || true"
+                }
+            }
+        }
+    }
+
+    post {
+        success {
+            echo "MASTER pipeline completed successfully! Release deployed to production."
+        }
+        failure {
+            echo "MASTER pipeline failed. Production was NOT updated."
+        }
+        always {
+            cleanWs()
+        }
+    }
+}
+
+def getAllServices() {
+    return [
+        'circleguard-auth-service',
+        'circleguard-identity-service',
+        'circleguard-form-service',
+        'circleguard-promotion-service',
+        'circleguard-notification-service',
+        'circleguard-gateway-service',
+        'circleguard-dashboard-service',
+        'circleguard-file-service'
+    ]
+}

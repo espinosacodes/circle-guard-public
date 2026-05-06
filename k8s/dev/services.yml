@@ -1,0 +1,383 @@
+---
+# ========================
+# ConfigMap - Shared Configuration
+# ========================
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: circleguard-config
+  namespace: circleguard-dev
+data:
+  SPRING_DATASOURCE_USERNAME: "admin"
+  SPRING_DATASOURCE_PASSWORD: "password"
+  SPRING_KAFKA_BOOTSTRAP_SERVERS: "kafka:9092"
+  SPRING_NEO4J_URI: "bolt://neo4j:7687"
+  SPRING_NEO4J_USERNAME: "neo4j"
+  SPRING_NEO4J_PASSWORD: "password"
+  SPRING_DATA_REDIS_HOST: "redis"
+  SPRING_DATA_REDIS_PORT: "6379"
+  SPRING_LDAP_URLS: "ldap://openldap:389"
+  SPRING_LDAP_BASE: "dc=circleguard,dc=edu"
+  SPRING_LDAP_USERNAME: "cn=admin,dc=circleguard,dc=edu"
+  SPRING_LDAP_PASSWORD: "admin"
+  JWT_SECRET: "my-super-secret-dev-key-32-chars-long-12345678"
+  QR_SECRET: "my-qr-secret-key-for-dev-1234567890"
+  VAULT_SECRET: "746573742d7365637265742d33322d63686172732d6c6f6e672d313233343536"
+  VAULT_SALT: "deadbeef"
+  VAULT_HASH_SALT: "12345678"
+---
+# ========================
+# Auth Service (port 8180)
+# ========================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: auth-service
+  namespace: circleguard-dev
+  labels:
+    app: auth-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: auth-service
+  template:
+    metadata:
+      labels:
+        app: auth-service
+    spec:
+      containers:
+        - name: auth-service
+          image: circleguard/auth-service:latest
+          ports:
+            - containerPort: 8180
+          envFrom:
+            - configMapRef:
+                name: circleguard-config
+          env:
+            - name: SPRING_DATASOURCE_URL
+              value: "jdbc:postgresql://postgres:5432/circleguard_auth"
+            - name: IDENTITY_SERVICE_URL
+              value: "http://identity-service:8083"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: auth-service
+  namespace: circleguard-dev
+spec:
+  selector:
+    app: auth-service
+  ports:
+    - port: 8180
+      targetPort: 8180
+  type: ClusterIP
+---
+# ========================
+# Identity Service (port 8083)
+# ========================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: identity-service
+  namespace: circleguard-dev
+  labels:
+    app: identity-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: identity-service
+  template:
+    metadata:
+      labels:
+        app: identity-service
+    spec:
+      containers:
+        - name: identity-service
+          image: circleguard/identity-service:latest
+          ports:
+            - containerPort: 8083
+          envFrom:
+            - configMapRef:
+                name: circleguard-config
+          env:
+            - name: SPRING_DATASOURCE_URL
+              value: "jdbc:postgresql://postgres:5432/circleguard_identity"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: identity-service
+  namespace: circleguard-dev
+spec:
+  selector:
+    app: identity-service
+  ports:
+    - port: 8083
+      targetPort: 8083
+  type: ClusterIP
+---
+# ========================
+# Form Service (port 8086)
+# ========================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: form-service
+  namespace: circleguard-dev
+  labels:
+    app: form-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: form-service
+  template:
+    metadata:
+      labels:
+        app: form-service
+    spec:
+      containers:
+        - name: form-service
+          image: circleguard/form-service:latest
+          ports:
+            - containerPort: 8086
+          envFrom:
+            - configMapRef:
+                name: circleguard-config
+          env:
+            - name: SPRING_DATASOURCE_URL
+              value: "jdbc:postgresql://postgres:5432/circleguard_form"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: form-service
+  namespace: circleguard-dev
+spec:
+  selector:
+    app: form-service
+  ports:
+    - port: 8086
+      targetPort: 8086
+  type: ClusterIP
+---
+# ========================
+# Promotion Service (port 8088)
+# ========================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: promotion-service
+  namespace: circleguard-dev
+  labels:
+    app: promotion-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: promotion-service
+  template:
+    metadata:
+      labels:
+        app: promotion-service
+    spec:
+      containers:
+        - name: promotion-service
+          image: circleguard/promotion-service:latest
+          ports:
+            - containerPort: 8088
+          envFrom:
+            - configMapRef:
+                name: circleguard-config
+          env:
+            - name: SPRING_DATASOURCE_URL
+              value: "jdbc:postgresql://postgres:5432/circleguard_promotion"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: promotion-service
+  namespace: circleguard-dev
+spec:
+  selector:
+    app: promotion-service
+  ports:
+    - port: 8088
+      targetPort: 8088
+  type: ClusterIP
+---
+# ========================
+# Notification Service (port 8082)
+# ========================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: notification-service
+  namespace: circleguard-dev
+  labels:
+    app: notification-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: notification-service
+  template:
+    metadata:
+      labels:
+        app: notification-service
+    spec:
+      containers:
+        - name: notification-service
+          image: circleguard/notification-service:latest
+          ports:
+            - containerPort: 8082
+          envFrom:
+            - configMapRef:
+                name: circleguard-config
+          env:
+            - name: AUTH_API_URL
+              value: "http://auth-service:8180"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: notification-service
+  namespace: circleguard-dev
+spec:
+  selector:
+    app: notification-service
+  ports:
+    - port: 8082
+      targetPort: 8082
+  type: ClusterIP
+---
+# ========================
+# Gateway Service (port 8087)
+# ========================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gateway-service
+  namespace: circleguard-dev
+  labels:
+    app: gateway-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: gateway-service
+  template:
+    metadata:
+      labels:
+        app: gateway-service
+    spec:
+      containers:
+        - name: gateway-service
+          image: circleguard/gateway-service:latest
+          ports:
+            - containerPort: 8087
+          envFrom:
+            - configMapRef:
+                name: circleguard-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gateway-service
+  namespace: circleguard-dev
+spec:
+  selector:
+    app: gateway-service
+  ports:
+    - port: 8087
+      targetPort: 8087
+  type: ClusterIP
+---
+# ========================
+# Dashboard Service (port 8084)
+# ========================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dashboard-service
+  namespace: circleguard-dev
+  labels:
+    app: dashboard-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: dashboard-service
+  template:
+    metadata:
+      labels:
+        app: dashboard-service
+    spec:
+      containers:
+        - name: dashboard-service
+          image: circleguard/dashboard-service:latest
+          ports:
+            - containerPort: 8084
+          envFrom:
+            - configMapRef:
+                name: circleguard-config
+          env:
+            - name: SPRING_DATASOURCE_URL
+              value: "jdbc:postgresql://postgres:5432/circleguard_dashboard"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: dashboard-service
+  namespace: circleguard-dev
+spec:
+  selector:
+    app: dashboard-service
+  ports:
+    - port: 8084
+      targetPort: 8084
+  type: ClusterIP
+---
+# ========================
+# File Service (port 8085)
+# ========================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: file-service
+  namespace: circleguard-dev
+  labels:
+    app: file-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: file-service
+  template:
+    metadata:
+      labels:
+        app: file-service
+    spec:
+      containers:
+        - name: file-service
+          image: circleguard/file-service:latest
+          ports:
+            - containerPort: 8085
+          envFrom:
+            - configMapRef:
+                name: circleguard-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: file-service
+  namespace: circleguard-dev
+spec:
+  selector:
+    app: file-service
+  ports:
+    - port: 8085
+      targetPort: 8085
+  type: ClusterIP

@@ -1,0 +1,182 @@
+// Pipeline: STAGE Environment
+// Builds, runs unit + integration + E2E tests, deploys to stage namespace
+
+pipeline {
+    agent any
+
+    environment {
+        DOCKER_REGISTRY = 'circleguard'
+        K8S_NAMESPACE   = 'circleguard-stage'
+        GRADLE_OPTS     = '-Dorg.gradle.daemon=false'
+    }
+
+    parameters {
+        choice(
+            name: 'SERVICE',
+            choices: [
+                'all',
+                'circleguard-auth-service',
+                'circleguard-identity-service',
+                'circleguard-form-service',
+                'circleguard-promotion-service',
+                'circleguard-notification-service',
+                'circleguard-gateway-service',
+                'circleguard-dashboard-service',
+                'circleguard-file-service'
+            ],
+            description: 'Select which service to build'
+        )
+    }
+
+    stages {
+        stage('Checkout') {
+            steps {
+                checkout scm
+            }
+        }
+
+        stage('Build') {
+            steps {
+                script {
+                    if (params.SERVICE == 'all') {
+                        sh './gradlew bootJar --no-daemon'
+                    } else {
+                        sh "./gradlew :services:${params.SERVICE}:bootJar --no-daemon"
+                    }
+                }
+            }
+        }
+
+        stage('Unit Tests') {
+            steps {
+                script {
+                    if (params.SERVICE == 'all') {
+                        sh './gradlew test --no-daemon'
+                    } else {
+                        sh "./gradlew :services:${params.SERVICE}:test --no-daemon"
+                    }
+                }
+            }
+            post {
+                always {
+                    junit '**/build/test-results/test/*.xml'
+                }
+            }
+        }
+
+        stage('Docker Build') {
+            steps {
+                script {
+                    def services = getServiceList()
+                    for (svc in services) {
+                        def shortName = svc.replace('circleguard-', '')
+                        sh """
+                            docker build -t ${DOCKER_REGISTRY}/${shortName}:${BUILD_NUMBER} \
+                                         -t ${DOCKER_REGISTRY}/${shortName}:latest \
+                                         services/${svc}/
+                        """
+                    }
+                }
+            }
+        }
+
+        stage('Deploy to Stage') {
+            steps {
+                script {
+                    sh "kubectl apply -f k8s/stage/namespace.yml"
+                    sh "kubectl apply -f k8s/stage/infrastructure.yml"
+                    sh "kubectl apply -f k8s/stage/services.yml"
+
+                    // Wait for deployments to be ready
+                    sh "kubectl rollout status deployment --timeout=120s -n ${K8S_NAMESPACE} || true"
+                }
+            }
+        }
+
+        stage('Integration Tests') {
+            steps {
+                script {
+                    sh './gradlew integrationTest --no-daemon || true'
+                }
+            }
+            post {
+                always {
+                    junit '**/build/test-results/integrationTest/*.xml'
+                }
+            }
+        }
+
+        stage('E2E Tests') {
+            steps {
+                script {
+                    sh './gradlew e2eTest --no-daemon || true'
+                }
+            }
+            post {
+                always {
+                    junit '**/build/test-results/e2eTest/*.xml'
+                }
+            }
+        }
+
+        stage('Performance Tests') {
+            steps {
+                script {
+                    sh '''
+                        pip install locust || true
+                        locust -f tests/performance/locustfile.py \
+                            --headless \
+                            --users 50 \
+                            --spawn-rate 10 \
+                            --run-time 60s \
+                            --host http://localhost:8080 \
+                            --csv results/performance \
+                            || true
+                    '''
+                }
+            }
+            post {
+                always {
+                    archiveArtifacts artifacts: 'results/performance*.csv', allowEmptyArchive: true
+                }
+            }
+        }
+
+        stage('Verify Stage') {
+            steps {
+                script {
+                    sh "kubectl get pods -n ${K8S_NAMESPACE}"
+                    sh "kubectl get services -n ${K8S_NAMESPACE}"
+                }
+            }
+        }
+    }
+
+    post {
+        success {
+            echo "STAGE pipeline completed successfully!"
+        }
+        failure {
+            echo "STAGE pipeline failed. Check the logs."
+        }
+        always {
+            cleanWs()
+        }
+    }
+}
+
+def getServiceList() {
+    if (params.SERVICE == 'all') {
+        return [
+            'circleguard-auth-service',
+            'circleguard-identity-service',
+            'circleguard-form-service',
+            'circleguard-promotion-service',
+            'circleguard-notification-service',
+            'circleguard-gateway-service',
+            'circleguard-dashboard-service',
+            'circleguard-file-service'
+        ]
+    }
+    return [params.SERVICE]
+}

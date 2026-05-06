@@ -1,0 +1,33 @@
+version: '3.8'
+
+services:
+  jenkins:
+    image: jenkins/jenkins:lts-jdk21
+    container_name: circleguard-jenkins
+    privileged: true
+    user: root
+    ports:
+      - "8090:8080"
+      - "50000:50000"
+    volumes:
+      - jenkins_home:/var/jenkins_home
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - JAVA_OPTS=-Djenkins.install.runSetupWizard=false
+    restart: unless-stopped
+
+  docker-dind:
+    image: docker:dind
+    container_name: circleguard-dind
+    privileged: true
+    environment:
+      - DOCKER_TLS_CERTDIR=/certs
+    volumes:
+      - docker-certs-client:/certs/client
+      - jenkins_home:/var/jenkins_home
+    ports:
+      - "2376:2376"
+
+volumes:
+  jenkins_home:
+  docker-certs-client:

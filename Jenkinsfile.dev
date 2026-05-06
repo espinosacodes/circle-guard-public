@@ -1,0 +1,137 @@
+// Pipeline: DEV Environment
+// Triggered on push to develop branch
+// Builds, tests (unit), and deploys to dev namespace
+
+pipeline {
+    agent any
+
+    environment {
+        DOCKER_REGISTRY = 'circleguard'
+        K8S_NAMESPACE   = 'circleguard-dev'
+        GRADLE_OPTS     = '-Dorg.gradle.daemon=false'
+    }
+
+    parameters {
+        choice(
+            name: 'SERVICE',
+            choices: [
+                'all',
+                'circleguard-auth-service',
+                'circleguard-identity-service',
+                'circleguard-form-service',
+                'circleguard-promotion-service',
+                'circleguard-notification-service',
+                'circleguard-gateway-service',
+                'circleguard-dashboard-service',
+                'circleguard-file-service'
+            ],
+            description: 'Select which service to build, or "all" for all services'
+        )
+    }
+
+    stages {
+        stage('Checkout') {
+            steps {
+                checkout scm
+            }
+        }
+
+        stage('Build') {
+            steps {
+                script {
+                    if (params.SERVICE == 'all') {
+                        sh './gradlew bootJar --no-daemon'
+                    } else {
+                        sh "./gradlew :services:${params.SERVICE}:bootJar --no-daemon"
+                    }
+                }
+            }
+        }
+
+        stage('Unit Tests') {
+            steps {
+                script {
+                    if (params.SERVICE == 'all') {
+                        sh './gradlew test --no-daemon'
+                    } else {
+                        sh "./gradlew :services:${params.SERVICE}:test --no-daemon"
+                    }
+                }
+            }
+            post {
+                always {
+                    junit '**/build/test-results/test/*.xml'
+                }
+            }
+        }
+
+        stage('Docker Build') {
+            steps {
+                script {
+                    def services = getServiceList()
+                    for (svc in services) {
+                        def shortName = svc.replace('circleguard-', '')
+                        sh """
+                            docker build -t ${DOCKER_REGISTRY}/${shortName}:${BUILD_NUMBER} \
+                                         -t ${DOCKER_REGISTRY}/${shortName}:latest \
+                                         services/${svc}/
+                        """
+                    }
+                }
+            }
+        }
+
+        stage('Deploy to Dev') {
+            steps {
+                script {
+                    sh "kubectl apply -f k8s/dev/namespace.yml"
+                    sh "kubectl apply -f k8s/dev/infrastructure.yml"
+                    sh "kubectl apply -f k8s/dev/services.yml"
+
+                    def services = getServiceList()
+                    for (svc in services) {
+                        def deployName = svc.replace('circleguard-', '').replace('-service', '-service')
+                        sh "kubectl rollout restart deployment/${deployName} -n ${K8S_NAMESPACE} || true"
+                    }
+                }
+            }
+        }
+
+        stage('Verify Deployment') {
+            steps {
+                script {
+                    sh "kubectl get pods -n ${K8S_NAMESPACE}"
+                    sh "kubectl get services -n ${K8S_NAMESPACE}"
+                }
+            }
+        }
+    }
+
+    post {
+        success {
+            echo "DEV pipeline completed successfully!"
+        }
+        failure {
+            echo "DEV pipeline failed. Check the logs."
+        }
+        always {
+            cleanWs()
+        }
+    }
+}
+
+def getServiceList() {
+    if (params.SERVICE == 'all') {
+        return [
+            'circleguard-auth-service',
+            'circleguard-identity-service',
+            'circleguard-form-service',
+            'circleguard-promotion-service',
+            'circleguard-notification-service',
+            'circleguard-gateway-service',
+            'circleguard-dashboard-service',
+            'circleguard-file-service'
+        ]
+    }
+    return [params.SERVICE]
+}
