@@ -232,15 +232,6 @@ services:
       postgres:
         condition: service_healthy
 
-  file-service:
-    image: circleguard/file-service:latest
-    container_name: circleguard-file-service
-    build:
-      context: ./services/circleguard-file-service
-      dockerfile: Dockerfile
-    ports:
-      - "8085:8085"
-
 volumes:
   pgdata:
   neo4jdata:

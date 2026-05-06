@@ -49,6 +49,7 @@ spec:
       containers:
         - name: auth-service
           image: circleguard/auth-service:latest
+          imagePullPolicy: Never
           ports:
             - containerPort: 8180
           envFrom:
@@ -96,6 +97,7 @@ spec:
       containers:
         - name: identity-service
           image: circleguard/identity-service:latest
+          imagePullPolicy: Never
           ports:
             - containerPort: 8083
           envFrom:
@@ -141,6 +143,7 @@ spec:
       containers:
         - name: form-service
           image: circleguard/form-service:latest
+          imagePullPolicy: Never
           ports:
             - containerPort: 8086
           envFrom:
@@ -186,6 +189,7 @@ spec:
       containers:
         - name: promotion-service
           image: circleguard/promotion-service:latest
+          imagePullPolicy: Never
           ports:
             - containerPort: 8088
           envFrom:
@@ -231,6 +235,7 @@ spec:
       containers:
         - name: notification-service
           image: circleguard/notification-service:latest
+          imagePullPolicy: Never
           ports:
             - containerPort: 8082
           envFrom:
@@ -276,6 +281,7 @@ spec:
       containers:
         - name: gateway-service
           image: circleguard/gateway-service:latest
+          imagePullPolicy: Never
           ports:
             - containerPort: 8087
           envFrom:
@@ -318,6 +324,7 @@ spec:
       containers:
         - name: dashboard-service
           image: circleguard/dashboard-service:latest
+          imagePullPolicy: Never
           ports:
             - containerPort: 8084
           envFrom:
@@ -338,46 +345,4 @@ spec:
   ports:
     - port: 8084
       targetPort: 8084
-  type: ClusterIP
----
-# ========================
-# File Service (port 8085)
-# ========================
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: file-service
-  namespace: circleguard-dev
-  labels:
-    app: file-service
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: file-service
-  template:
-    metadata:
-      labels:
-        app: file-service
-    spec:
-      containers:
-        - name: file-service
-          image: circleguard/file-service:latest
-          ports:
-            - containerPort: 8085
-          envFrom:
-            - configMapRef:
-                name: circleguard-config
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: file-service
-  namespace: circleguard-dev
-spec:
-  selector:
-    app: file-service
-  ports:
-    - port: 8085
-      targetPort: 8085
   type: ClusterIP

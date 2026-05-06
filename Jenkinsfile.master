@@ -175,7 +175,6 @@ ${fixes}
 - circleguard-notification-service:${VERSION}
 - circleguard-gateway-service:${VERSION}
 - circleguard-dashboard-service:${VERSION}
-- circleguard-file-service:${VERSION}
 
 ## Test Results
 - Unit Tests: PASSED
@@ -217,7 +216,6 @@ def getAllServices() {
         'circleguard-promotion-service',
         'circleguard-notification-service',
         'circleguard-gateway-service',
-        'circleguard-dashboard-service',
-        'circleguard-file-service'
+        'circleguard-dashboard-service'
     ]
 }

@@ -22,8 +22,7 @@ pipeline {
                 'circleguard-promotion-service',
                 'circleguard-notification-service',
                 'circleguard-gateway-service',
-                'circleguard-dashboard-service',
-                'circleguard-file-service'
+                'circleguard-dashboard-service'
             ],
             description: 'Select which service to build, or "all" for all services'
         )
@@ -129,8 +128,7 @@ def getServiceList() {
             'circleguard-promotion-service',
             'circleguard-notification-service',
             'circleguard-gateway-service',
-            'circleguard-dashboard-service',
-            'circleguard-file-service'
+            'circleguard-dashboard-service'
         ]
     }
     return [params.SERVICE]

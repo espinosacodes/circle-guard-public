@@ -13,7 +13,6 @@ SERVICES=(
   "circleguard-notification-service"
   "circleguard-gateway-service"
   "circleguard-dashboard-service"
-  "circleguard-file-service"
 )
 
 # Step 1: Build all JARs with Gradle
