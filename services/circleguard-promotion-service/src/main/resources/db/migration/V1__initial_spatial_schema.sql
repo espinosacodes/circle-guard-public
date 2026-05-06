@@ -31,3 +31,12 @@ CREATE TABLE access_points (
 -- Indexing for lookup
 CREATE INDEX idx_ap_mac ON access_points(mac_address);
 CREATE INDEX idx_floor_building ON floors(building_id);
+
+CREATE TABLE system_settings (
+    id BIGSERIAL PRIMARY KEY,
+    unconfirmed_fencing_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+    auto_threshold_seconds BIGINT NOT NULL DEFAULT 3600
+);
+
+-- Seed initial record
+INSERT INTO system_settings (unconfirmed_fencing_enabled, auto_threshold_seconds) VALUES (FALSE, 3600);
