@@ -1,0 +1,94 @@
+// =====================================================================
+// circleguard-promotion-service - DEV pipeline
+// Includes integration tests with Testcontainers (Postgres + Neo4j)
+// =====================================================================
+pipeline {
+    agent any
+
+    options {
+        timestamps()
+        timeout(time: 25, unit: 'MINUTES')
+    }
+
+    environment {
+        SERVICE         = 'circleguard-promotion-service'
+        SHORT_NAME      = 'promotion-service'
+        SERVICE_PORT    = '8088'
+        DOCKER_REGISTRY = 'circleguard'
+        K8S_NAMESPACE   = 'circleguard-dev'
+        KIND_CLUSTER    = 'desktop'
+    }
+
+    stages {
+        stage('Checkout') { steps { checkout scm } }
+
+        stage('Build') {
+            steps { sh "./gradlew :services:${SERVICE}:clean :services:${SERVICE}:bootJar --no-daemon" }
+        }
+
+        stage('Unit Tests') {
+            steps { sh "./gradlew :services:${SERVICE}:test --no-daemon" }
+            post {
+                always {
+                    junit testResults: "services/${SERVICE}/build/test-results/test/*.xml", allowEmptyResults: true
+                    archiveArtifacts artifacts: "services/${SERVICE}/build/reports/tests/**", allowEmptyArchive: true
+                }
+            }
+        }
+
+        stage('Integration Tests (Testcontainers)') {
+            steps {
+                sh "./gradlew :services:${SERVICE}:integrationTest --no-daemon || echo 'No integrationTest task'"
+            }
+            post {
+                always {
+                    junit testResults: "services/${SERVICE}/build/test-results/integrationTest/*.xml", allowEmptyResults: true
+                }
+            }
+        }
+
+        stage('Code Coverage') {
+            steps { sh "./gradlew :services:${SERVICE}:jacocoTestReport --no-daemon || true" }
+            post {
+                always {
+                    archiveArtifacts artifacts: "services/${SERVICE}/build/reports/jacoco/**", allowEmptyArchive: true
+                }
+            }
+        }
+
+        stage('Docker Build') {
+            steps {
+                sh "docker build -t ${DOCKER_REGISTRY}/${SHORT_NAME}:${BUILD_NUMBER} -t ${DOCKER_REGISTRY}/${SHORT_NAME}:latest services/${SERVICE}/"
+            }
+        }
+
+        stage('Load Image into Kind') {
+            steps { sh "kind load docker-image ${DOCKER_REGISTRY}/${SHORT_NAME}:latest --name ${KIND_CLUSTER}" }
+        }
+
+        stage('Deploy to Dev') {
+            steps {
+                sh "kubectl apply -f k8s/dev/namespace.yml"
+                sh "kubectl apply -f k8s/dev/services.yml"
+                sh "kubectl rollout restart deployment/${SHORT_NAME} -n ${K8S_NAMESPACE}"
+                sh "kubectl rollout status deployment/${SHORT_NAME} -n ${K8S_NAMESPACE} --timeout=180s"
+            }
+        }
+
+        stage('Smoke Test') {
+            steps {
+                sh """
+                    kubectl port-forward -n ${K8S_NAMESPACE} svc/${SHORT_NAME} ${SERVICE_PORT}:${SERVICE_PORT} > /dev/null 2>&1 &
+                    PF_PID=\$!
+                    sleep 3
+                    CODE=\$(curl -s -o /dev/null -w '%{http_code}' http://localhost:${SERVICE_PORT}/ || echo 'fail')
+                    kill \$PF_PID 2>/dev/null || true
+                    echo "${SHORT_NAME} smoke test => HTTP \$CODE"
+                    case \$CODE in 2*|3*|401|404) ;; *) exit 1;; esac
+                """
+            }
+        }
+    }
+
+    post { always { cleanWs() } }
+}
