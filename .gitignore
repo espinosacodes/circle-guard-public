@@ -46,3 +46,11 @@ web-build/
 *_data/
 pgdata/
 neo4jdata/
+
+# CI/CD pipeline temp files
+.venv-*/
+.venv/
+.pf_pids
+.git-sha
+.release-version
+.claude/

@@ -1,52 +1,92 @@
-// Pipeline: MASTER (Production) Environment
-// Full pipeline: build → unit tests → deploy to stage → system tests → deploy to production
-// Includes automatic Release Notes generation
+// =====================================================================
+// CircleGuard - MASTER (Production) Pipeline
+// =====================================================================
+// Full production pipeline:
+//   1. Build + unit tests
+//   2. Build + push images
+//   3. Deploy to Stage K8s
+//   4. Validate with Integration + E2E + Performance tests on stage
+//   5. Manual approval gate
+//   6. Deploy to Production (Master) K8s
+//   7. Smoke verify production
+//   8. Generate Release Notes following Change Management best practices
+//      (semantic version, categorized changes, test summary, rollback plan)
+//   9. Tag the release in git
+// =====================================================================
 
 pipeline {
     agent any
 
+    options {
+        timestamps()
+        timeout(time: 60, unit: 'MINUTES')
+        buildDiscarder(logRotator(numToKeepStr: '20'))
+        disableConcurrentBuilds()  // never run two production deploys at once
+    }
+
     environment {
-        DOCKER_REGISTRY = 'circleguard'
-        K8S_NS_STAGE    = 'circleguard-stage'
-        K8S_NS_MASTER   = 'circleguard-master'
-        GRADLE_OPTS     = '-Dorg.gradle.daemon=false'
-        VERSION         = "${BUILD_NUMBER}"
+        DOCKER_REGISTRY  = 'circleguard'
+        K8S_NS_STAGE     = 'circleguard-stage'
+        K8S_NS_MASTER    = 'circleguard-master'
+        KIND_CLUSTER     = 'desktop'
+        GRADLE_OPTS      = '-Dorg.gradle.daemon=false'
+        VERSION          = "v1.0.${BUILD_NUMBER}"
+        CG_AUTH_URL         = 'http://localhost:8180'
+        CG_IDENTITY_URL     = 'http://localhost:8083'
+        CG_FORM_URL         = 'http://localhost:8086'
+        CG_PROMOTION_URL    = 'http://localhost:8088'
+        CG_NOTIFICATION_URL = 'http://localhost:8082'
+        CG_GATEWAY_URL      = 'http://localhost:8087'
+        CG_DASHBOARD_URL    = 'http://localhost:8084'
+        CG_REDIS            = 'redis://localhost:6379'
+        CG_KAFKA            = 'localhost:9092'
+        QR_SECRET           = 'my-qr-secret-key-for-dev-1234567890'
     }
 
     stages {
+
         stage('Checkout') {
             steps {
                 checkout scm
+                sh 'git rev-parse --short HEAD > .git-sha'
+                script {
+                    env.GIT_SHA  = readFile('.git-sha').trim()
+                    env.PREV_TAG = sh(script: "git describe --tags --abbrev=0 2>/dev/null || echo ''",
+                                      returnStdout: true).trim()
+                }
+                echo "Releasing ${env.VERSION} (commit ${env.GIT_SHA}, previous tag ${env.PREV_TAG ?: '<none>'})"
             }
         }
 
-        stage('Build') {
+        stage('Build all services') {
             steps {
-                sh './gradlew bootJar --no-daemon'
+                sh './gradlew clean bootJar --no-daemon --parallel'
             }
         }
 
         stage('Unit Tests') {
             steps {
-                sh './gradlew test --no-daemon'
+                sh './gradlew test --no-daemon --parallel'
             }
             post {
                 always {
-                    junit '**/build/test-results/test/*.xml'
+                    junit testResults: '**/build/test-results/test/*.xml', allowEmptyResults: true
+                    archiveArtifacts artifacts: '**/build/reports/jacoco/**', allowEmptyArchive: true
                 }
             }
         }
 
-        stage('Docker Build & Tag') {
+        stage('Docker Build & Load (tagged with version)') {
             steps {
                 script {
-                    def services = getAllServices()
-                    for (svc in services) {
+                    for (svc in allServices()) {
                         def shortName = svc.replace('circleguard-', '')
                         sh """
-                            docker build -t ${DOCKER_REGISTRY}/${shortName}:${VERSION} \
+                            docker build -t ${DOCKER_REGISTRY}/${shortName}:${env.VERSION} \
+                                         -t ${DOCKER_REGISTRY}/${shortName}:${env.GIT_SHA} \
                                          -t ${DOCKER_REGISTRY}/${shortName}:latest \
                                          services/${svc}/
+                            kind load docker-image ${DOCKER_REGISTRY}/${shortName}:latest --name ${KIND_CLUSTER}
                         """
                     }
                 }
@@ -55,76 +95,92 @@ pipeline {
 
         stage('Deploy to Stage') {
             steps {
-                script {
-                    sh "kubectl apply -f k8s/stage/namespace.yml"
-                    sh "kubectl apply -f k8s/stage/infrastructure.yml"
-                    sh "kubectl apply -f k8s/stage/services.yml"
-                    sh "kubectl rollout status deployment --timeout=180s -n ${K8S_NS_STAGE} || true"
-                }
+                sh """
+                    kubectl apply -f k8s/stage/namespace.yml
+                    kubectl create configmap postgres-init --from-file=init-db.sql=init-db.sql \
+                            --namespace ${K8S_NS_STAGE} --dry-run=client -o yaml | kubectl apply -f -
+                    kubectl apply -f k8s/stage/infrastructure.yml
+                    kubectl apply -f k8s/stage/services.yml
+                    kubectl rollout restart deployment -n ${K8S_NS_STAGE}
+                    kubectl rollout status deployment --timeout=180s -n ${K8S_NS_STAGE} || true
+                    kubectl wait --for=condition=ready pod --all -n ${K8S_NS_STAGE} --timeout=180s || true
+                """
             }
         }
 
-        stage('Integration Tests on Stage') {
+        stage('System Tests on Stage') {
             steps {
-                sh './gradlew integrationTest --no-daemon || true'
+                sh '''
+                    python3 -m venv .venv-master
+                    . .venv-master/bin/activate
+                    pip install --quiet --upgrade pip
+                    pip install --quiet -r tests/requirements.txt
+
+                    # Port-forwards to STAGE namespace
+                    rm -f .pf_pids
+                    for spec in \
+                        "auth-service 8180" "identity-service 8083" \
+                        "form-service 8086" "promotion-service 8088" \
+                        "notification-service 8082" "gateway-service 8087" \
+                        "dashboard-service 8084" "postgres 5432" \
+                        "redis 6379" "kafka 9092"; do
+                        set -- $spec
+                        kubectl port-forward -n circleguard-stage svc/$1 $2:$2 > /dev/null 2>&1 &
+                        echo $! >> .pf_pids
+                    done
+                    sleep 4
+
+                    pytest tests/integration -v --junitxml=results/integration-master.xml || true
+                    pytest tests/e2e         -v --junitxml=results/e2e-master.xml         || true
+
+                    mkdir -p results
+                    locust -f tests/performance/locustfile.py --headless \
+                        --users 100 --spawn-rate 20 --run-time 120s \
+                        --host http://localhost:8180 \
+                        --csv results/perf-master \
+                        --csv-full-history \
+                        --html results/perf-master.html || true
+
+                    # Capture per-service deployed image versions for the release notes
+                    kubectl get deployments -n circleguard-stage -o jsonpath='{range .items[*]}{.metadata.name}{"\\t"}{.spec.template.spec.containers[0].image}{"\\n"}{end}' \
+                        > results/deployed-stage-images.tsv
+
+                    # Tear down forwards
+                    while read pid; do kill $pid 2>/dev/null || true; done < .pf_pids
+                    rm -f .pf_pids
+                '''
             }
             post {
                 always {
-                    junit '**/build/test-results/integrationTest/*.xml'
+                    junit testResults: 'results/integration-master.xml', allowEmptyResults: true
+                    junit testResults: 'results/e2e-master.xml',         allowEmptyResults: true
+                    archiveArtifacts artifacts: 'results/perf-master*',  allowEmptyArchive: true
+                    archiveArtifacts artifacts: 'results/deployed-stage-images.tsv', allowEmptyArchive: true
                 }
             }
         }
 
-        stage('E2E Tests on Stage') {
+        stage('Production Approval Gate') {
             steps {
-                sh './gradlew e2eTest --no-daemon || true'
-            }
-            post {
-                always {
-                    junit '**/build/test-results/e2eTest/*.xml'
-                }
-            }
-        }
-
-        stage('Performance Tests on Stage') {
-            steps {
-                script {
-                    sh '''
-                        pip install locust || true
-                        mkdir -p results
-                        locust -f tests/performance/locustfile.py \
-                            --headless \
-                            --users 100 \
-                            --spawn-rate 20 \
-                            --run-time 120s \
-                            --host http://localhost:8080 \
-                            --csv results/performance \
-                            || true
-                    '''
-                }
-            }
-            post {
-                always {
-                    archiveArtifacts artifacts: 'results/performance*.csv', allowEmptyArchive: true
-                }
-            }
-        }
-
-        stage('Approval Gate') {
-            steps {
-                input message: 'All tests passed on Stage. Deploy to Production (master)?',
-                      ok: 'Deploy to Production'
+                input message: """All stage tests completed.
+Release ${env.VERSION} (commit ${env.GIT_SHA}).
+Promote to PRODUCTION namespace '${K8S_NS_MASTER}'?""",
+                      ok: 'Promote to Production'
             }
         }
 
         stage('Deploy to Production') {
             steps {
-                script {
-                    sh "kubectl apply -f k8s/master/namespace.yml"
-                    sh "kubectl apply -f k8s/master/infrastructure.yml"
-                    sh "kubectl apply -f k8s/master/services.yml"
-                    sh "kubectl rollout status deployment --timeout=180s -n ${K8S_NS_MASTER} || true"
-                }
+                sh """
+                    kubectl apply -f k8s/master/namespace.yml
+                    kubectl create configmap postgres-init --from-file=init-db.sql=init-db.sql \
+                            --namespace ${K8S_NS_MASTER} --dry-run=client -o yaml | kubectl apply -f -
+                    kubectl apply -f k8s/master/infrastructure.yml
+                    kubectl apply -f k8s/master/services.yml
+                    kubectl rollout restart deployment -n ${K8S_NS_MASTER}
+                    kubectl rollout status deployment --timeout=300s -n ${K8S_NS_MASTER} || true
+                    kubectl wait --for=condition=ready pod --all -n ${K8S_NS_MASTER} --timeout=180s || true
+                """
             }
         }
 
@@ -137,78 +193,31 @@ pipeline {
 
         stage('Generate Release Notes') {
             steps {
-                script {
-                    def previousTag = sh(script: "git describe --tags --abbrev=0 2>/dev/null || echo 'none'", returnStdout: true).trim()
-                    def currentDate = new Date().format('yyyy-MM-dd')
-                    def releaseVersion = "v1.0.${VERSION}"
+                sh "bash scripts/generate-release-notes.sh ${env.VERSION} '${env.PREV_TAG}' '${env.GIT_SHA}' > RELEASE_NOTES_${env.VERSION}.md"
+                archiveArtifacts artifacts: "RELEASE_NOTES_${env.VERSION}.md"
+                echo "Release notes generated for ${env.VERSION}"
+            }
+        }
 
-                    def changes = ''
-                    if (previousTag == 'none') {
-                        changes = sh(script: "git log --pretty=format:'- %s (%an)' HEAD", returnStdout: true).trim()
-                    } else {
-                        changes = sh(script: "git log --pretty=format:'- %s (%an)' ${previousTag}..HEAD", returnStdout: true).trim()
-                    }
-
-                    def features = sh(script: "git log --pretty=format:'- %s' ${previousTag == 'none' ? '' : previousTag + '..'}HEAD --grep='feat' --grep='add' --grep='new' -i || echo 'No new features'", returnStdout: true).trim()
-                    def fixes = sh(script: "git log --pretty=format:'- %s' ${previousTag == 'none' ? '' : previousTag + '..'}HEAD --grep='fix' --grep='bug' -i || echo 'No bug fixes'", returnStdout: true).trim()
-
-                    def releaseNotes = """
-# Release Notes - ${releaseVersion}
-**Date:** ${currentDate}
-**Build:** #${VERSION}
-**Environment:** Production (master)
-
-## Changes Since Last Release
-${changes}
-
-## New Features
-${features}
-
-## Bug Fixes
-${fixes}
-
-## Services Deployed
-- circleguard-auth-service:${VERSION}
-- circleguard-identity-service:${VERSION}
-- circleguard-form-service:${VERSION}
-- circleguard-promotion-service:${VERSION}
-- circleguard-notification-service:${VERSION}
-- circleguard-gateway-service:${VERSION}
-- circleguard-dashboard-service:${VERSION}
-
-## Test Results
-- Unit Tests: PASSED
-- Integration Tests: PASSED
-- E2E Tests: PASSED
-- Performance Tests: See attached CSV reports
-
----
-*Generated automatically by Jenkins Pipeline*
-"""
-                    writeFile file: "RELEASE_NOTES_${releaseVersion}.md", text: releaseNotes
-                    archiveArtifacts artifacts: "RELEASE_NOTES_*.md"
-
-                    // Tag the release
-                    sh "git tag -a ${releaseVersion} -m 'Release ${releaseVersion}' || true"
-                }
+        stage('Tag Release') {
+            steps {
+                sh """
+                    git tag -a ${env.VERSION} -m 'Production release ${env.VERSION} (commit ${env.GIT_SHA})' || true
+                    # In production you would push the tag to remote — left as manual step for the operator
+                    echo 'Run: git push origin ${env.VERSION}'
+                """
             }
         }
     }
 
     post {
-        success {
-            echo "MASTER pipeline completed successfully! Release deployed to production."
-        }
-        failure {
-            echo "MASTER pipeline failed. Production was NOT updated."
-        }
-        always {
-            cleanWs()
-        }
+        success { echo "MASTER pipeline succeeded — ${env.VERSION} is live in production." }
+        failure { echo "MASTER pipeline FAILED — production was NOT updated for ${env.VERSION}." }
+        always  { cleanWs() }
     }
 }
 
-def getAllServices() {
+def allServices() {
     return [
         'circleguard-auth-service',
         'circleguard-identity-service',

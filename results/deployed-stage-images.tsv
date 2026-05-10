@@ -1,0 +1,13 @@
+auth-service	circleguard/auth-service:latest
+dashboard-service	circleguard/dashboard-service:latest
+form-service	circleguard/form-service:latest
+gateway-service	circleguard/gateway-service:latest
+identity-service	circleguard/identity-service:latest
+kafka	confluentinc/cp-kafka:7.6.0
+neo4j	neo4j:5.26
+notification-service	circleguard/notification-service:latest
+openldap	osixia/openldap:1.5.0
+postgres	postgres:16
+promotion-service	circleguard/promotion-service:latest
+redis	redis:7.2
+zookeeper	confluentinc/cp-zookeeper:7.6.0

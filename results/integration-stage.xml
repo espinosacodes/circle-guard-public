@@ -1,0 +1,105 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="2" skipped="0" tests="11" time="99.376" timestamp="2026-05-10T16:41:51.719527-05:00" hostname="Santiagos-MacBook-Pro-2.local"><testcase classname="tests.integration.test_auth_identity_integration" name="test_identity_service_reachable_from_auth_network" time="0.406" /><testcase classname="tests.integration.test_auth_identity_integration" name="test_identity_map_endpoint_responds" time="0.233" /><testcase classname="tests.integration.test_auth_identity_integration" name="test_login_endpoint_exists" time="0.364" /><testcase classname="tests.integration.test_dashboard_promotion_integration" name="test_promotion_exposes_health_stats_endpoint" time="0.848" /><testcase classname="tests.integration.test_dashboard_promotion_integration" name="test_dashboard_campus_summary_fetches_from_promotion" time="0.011" /><testcase classname="tests.integration.test_dashboard_promotion_integration" name="test_dashboard_returns_json_content_type" time="0.007" /><testcase classname="tests.integration.test_form_kafka_integration" name="test_survey_submission_publishes_kafka_event" time="20.712"><failure message="AssertionError: Kafka event for anonymousId=17609dcf-b750-4be3-9041-798029c63cda not found within 15s&#10;assert False">hosts = {'auth': 'http://localhost:8180', 'dashboard': 'http://localhost:8084', 'form': 'http://localhost:8086', 'gateway': 'http://localhost:8087', ...}
+kafka_consumer = &lt;kafka.consumer.group.KafkaConsumer object at 0x106f2ad60&gt;
+form_alive = None
+
+    def test_survey_submission_publishes_kafka_event(hosts, kafka_consumer, form_alive):
+        anonymous_id = str(uuid.uuid4())
+        payload = {
+            "anonymousId": anonymous_id,
+            "responses": {"q1": "NO", "q2": "NO"},
+            "hasFever": False,
+            "hasCough": False,
+        }
+    
+        # Drain any backlog before the action
+        list(kafka_consumer)  # iterates over latest messages until consumer_timeout
+    
+        # Publish the survey
+        r = requests.post(f"{hosts['form']}/api/v1/surveys", json=payload, timeout=10)
+        assert r.status_code in (200, 201), f"Survey submission failed: {r.status_code} {r.text}"
+    
+        # Wait for the Kafka event
+        deadline = time.time() + 15
+        found = False
+        for msg in kafka_consumer:
+            if time.time() &gt; deadline:
+                break
+            try:
+                if msg.value and str(msg.value.get("anonymousId")) == anonymous_id:
+                    found = True
+                    # Validate the event schema
+                    assert "hasSymptoms" in msg.value
+                    assert "timestamp" in msg.value
+                    break
+            except (AttributeError, KeyError):
+                continue
+    
+&gt;       assert found, f"Kafka event for anonymousId={anonymous_id} not found within 15s"
+E       AssertionError: Kafka event for anonymousId=17609dcf-b750-4be3-9041-798029c63cda not found within 15s
+E       assert False
+
+tests/integration/test_form_kafka_integration.py:78: AssertionError</failure></testcase><testcase classname="tests.integration.test_gateway_redis_integration" name="test_gateway_grants_access_when_redis_status_clear" time="0.499" /><testcase classname="tests.integration.test_gateway_redis_integration" name="test_gateway_denies_access_when_redis_status_contagied" time="0.008" /><testcase classname="tests.integration.test_gateway_redis_integration" name="test_gateway_rejects_invalid_token_without_consulting_redis" time="0.007" /><testcase classname="tests.integration.test_promotion_kafka_integration" name="test_survey_submitted_event_triggers_status_change" time="75.019"><failure message="kafka.errors.KafkaTimeoutError: KafkaTimeoutError: Failed to update metadata after 60.0 secs.">kafka_producer = &lt;kafka.producer.kafka.KafkaProducer object at 0x10707c760&gt;
+status_changed_consumer = &lt;kafka.consumer.group.KafkaConsumer object at 0x1074cc190&gt;
+
+    def test_survey_submitted_event_triggers_status_change(kafka_producer, status_changed_consumer):
+        anonymous_id = str(uuid.uuid4())
+        survey_event = {
+            "anonymousId": anonymous_id,
+            "hasSymptoms": True,
+            "timestamp": int(time.time() * 1000),
+        }
+    
+        # Drain any pending messages
+        list(status_changed_consumer)
+    
+        # Publish the inbound event the promotion-service is listening for
+&gt;       kafka_producer.send("survey.submitted", key=anonymous_id, value=survey_event)
+
+tests/integration/test_promotion_kafka_integration.py:63: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+.venv-stage/lib/python3.9/site-packages/kafka/producer/kafka.py:844: in send
+    self._wait_on_metadata(topic, timer.timeout_ms)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = &lt;kafka.producer.kafka.KafkaProducer object at 0x10707c760&gt;
+topic = 'survey.submitted', max_wait_ms = 59999
+
+    def _wait_on_metadata(self, topic, max_wait_ms):
+        """
+        Wait for cluster metadata including partitions for the given topic to
+        be available.
+    
+        Arguments:
+            topic (str): topic we want metadata for
+            max_wait (float): maximum time in secs for waiting on the metadata
+    
+        Returns:
+            set: partition ids for the topic
+    
+        Raises:
+            KafkaTimeoutError: if partitions for topic were not obtained before
+                specified max_wait timeout
+        """
+        # add topic to metadata topic list if it is not there already.
+        self._sender.add_topic(topic)
+        timer = Timer(max_wait_ms, "Failed to update metadata after %.1f secs." % (max_wait_ms / 1000,))
+        metadata_event = None
+        while True:
+            partitions = self._metadata.partitions_for_topic(topic)
+            if partitions is not None:
+                return partitions
+            timer.maybe_raise()
+            if not metadata_event:
+                metadata_event = threading.Event()
+    
+            log.debug("%s: Requesting metadata update for topic %s", str(self), topic)
+            metadata_event.clear()
+            future = self._metadata.request_update()
+            future.add_both(lambda e, *args: e.set(), metadata_event)
+            self._sender.wakeup()
+            metadata_event.wait(timer.timeout_ms / 1000)
+            if not future.is_done:
+&gt;               raise Errors.KafkaTimeoutError(
+E               kafka.errors.KafkaTimeoutError: KafkaTimeoutError: Failed to update metadata after 60.0 secs.
+
+.venv-stage/lib/python3.9/site-packages/kafka/producer/kafka.py:968: KafkaTimeoutError</failure></testcase></testsuite></testsuites>

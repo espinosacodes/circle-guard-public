@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="1" tests="14" time="1.759" timestamp="2026-05-10T16:43:31.328210-05:00" hostname="Santiagos-MacBook-Pro-2.local"><testcase classname="tests.e2e.test_dashboard_analytics_flow" name="test_dashboard_campus_summary_returns_data" time="0.085" /><testcase classname="tests.e2e.test_dashboard_analytics_flow" name="test_dashboard_hotspots_endpoint" time="0.010" /><testcase classname="tests.e2e.test_dashboard_analytics_flow" name="test_dashboard_timeseries_endpoint" time="0.008" /><testcase classname="tests.e2e.test_full_lifecycle_flow" name="test_full_lifecycle_symptomatic_user_blocked_at_gate" time="0.374" /><testcase classname="tests.e2e.test_health_survey_flow" name="test_health_survey_submission_with_symptoms" time="0.031" /><testcase classname="tests.e2e.test_health_survey_flow" name="test_health_survey_submission_without_symptoms" time="0.009" /><testcase classname="tests.e2e.test_health_survey_flow" name="test_form_service_persists_survey_after_submit" time="0.529"><failure message="AssertionError: form-service /surveys must respond with a recognized HTTP code&#10;assert 405 in (200, 401, 403, 404)&#10; +  where 405 = &lt;Response [405]&gt;.status_code">hosts = {'auth': 'http://localhost:8180', 'dashboard': 'http://localhost:8084', 'form': 'http://localhost:8086', 'gateway': 'http://localhost:8087', ...}
+stack_up = None
+
+    def test_form_service_persists_survey_after_submit(hosts, stack_up):
+        """
+        Submit a survey, then ensure the form-service persisted it by attempting
+        to read it back via any GET endpoint. Different versions of the API may
+        expose this under /surveys, /surveys/{id}, or /surveys/by-user/{id}.
+        Treat 200 OR 404 as acceptable proof of API contract.
+        """
+        anonymous_id = str(uuid.uuid4())
+        submit = requests.post(f"{hosts['form']}/api/v1/surveys",
+                               json={"anonymousId": anonymous_id,
+                                     "responses": {"q1": "NO"}},
+                               timeout=10)
+        assert submit.status_code in (200, 201)
+        time.sleep(0.5)
+        r = requests.get(f"{hosts['form']}/api/v1/surveys", timeout=5)
+&gt;       assert r.status_code in (200, 401, 403, 404), \
+            "form-service /surveys must respond with a recognized HTTP code"
+E       AssertionError: form-service /surveys must respond with a recognized HTTP code
+E       assert 405 in (200, 401, 403, 404)
+E        +  where 405 = &lt;Response [405]&gt;.status_code
+
+tests/e2e/test_health_survey_flow.py:75: AssertionError</failure></testcase><testcase classname="tests.e2e.test_login_flow" name="test_login_endpoint_is_reachable" time="0.192" /><testcase classname="tests.e2e.test_login_flow" name="test_login_with_invalid_credentials_is_rejected" time="0.145" /><testcase classname="tests.e2e.test_login_flow" name="test_login_response_carries_a_token_when_successful" time="0.178"><skipped type="pytest.skip" message="No valid test user provisioned (401)">/Users/santiagoespinosa/Documents/swe5/circle-guard-public/tests/e2e/test_login_flow.py:59: No valid test user provisioned (401)</skipped></testcase><testcase classname="tests.e2e.test_qr_entry_flow" name="test_clear_user_can_enter_campus" time="0.021" /><testcase classname="tests.e2e.test_qr_entry_flow" name="test_contagied_user_is_blocked_at_campus" time="0.009" /><testcase classname="tests.e2e.test_qr_entry_flow" name="test_potential_user_is_blocked_at_campus" time="0.011" /><testcase classname="tests.e2e.test_qr_entry_flow" name="test_gateway_rejects_expired_qr_even_for_clear_user" time="0.013" /></testsuite></testsuites>
