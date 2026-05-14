@@ -58,6 +58,12 @@ ENTRYPOINT ["java", "-jar", "app.jar"]
 
 **Docker Compose** (`docker-compose.yml`) levanta los 7 servicios + 5 dependencias (postgres, neo4j, kafka+zookeeper, redis, openldap) con healthchecks y `init-db.sql` montado en postgres para crear las 5 bases por servicio.
 
+![Docker Compose levantado](screenshots/01-docker-compose.png)
+*Fig. 2.1 — Stack completo levantado con `docker compose ps` (13 contenedores Up).*
+
+![Dockerfile auth-service](screenshots/02-dockerfile.png)
+*Fig. 2.2 — Dockerfile típico (JRE 21 Alpine, copy del JAR pre-construido, EXPOSE del puerto).*
+
 ### 2.2 Kubernetes (kind dentro de Docker Desktop)
 
 Estructura `k8s/<env>/`:
@@ -79,6 +85,15 @@ Decisiones técnicas críticas (todas codificadas en los manifiestos):
 | `circleguard-config` ConfigMap inyectado vía `envFrom` | Una sola fuente de verdad para `SPRING_*`, `JWT_SECRET`, `QR_SECRET`, `VAULT_*` |
 | Cada deployment sobreescribe `SPRING_DATASOURCE_URL` | Para apuntar a su base por-servicio |
 
+![Estructura de manifiestos K8s](screenshots/03-k8s-structure.png)
+*Fig. 2.3 — Manifiestos por entorno (`k8s/dev`, `k8s/stage`, `k8s/master`).*
+
+![ConfigMap + Auth Deployment](screenshots/04-k8s-services-yml.png)
+*Fig. 2.4 — `k8s/dev/services.yml`: ConfigMap compartido y Deployment de auth-service con `imagePullPolicy: Never` y `envFrom`.*
+
+![Services K8s](screenshots/11-k8s-services.png)
+*Fig. 2.5 — `kubectl get services -n circleguard-dev` mostrando ClusterIPs por servicio.*
+
 ### 2.3 Jenkins
 
 `jenkins/docker-compose.yml` levanta Jenkins LTS JDK21 con Docker-in-Docker:
@@ -91,6 +106,9 @@ jenkins:
     - jenkins_home:/var/jenkins_home
     - /var/run/docker.sock:/var/run/docker.sock
 ```
+
+![Jenkins running](screenshots/05-jenkins.png)
+*Fig. 2.6 — Jenkins dashboard accesible en `http://localhost:8090`.*
 
 ---
 
@@ -129,6 +147,9 @@ dashboard-service smoke test => HTTP 404
 ```
 Los códigos 404 indican "app viva pero sin endpoint en `/`" (Spring Boot por defecto). El 401 confirma que identity-service tiene Spring Security activo. Cualquier `000`/connection-refused haría fallar el stage.
 
+![Jenkinsfile.dev](screenshots/06-jenkinsfile-dev.png)
+*Fig. 3.1 — `Jenkinsfile.dev` con los 10 stages del pipeline de desarrollo.*
+
 ### 3.2 Pipeline STAGE
 
 **Archivo:** `Jenkinsfile.stage` (corredor local equivalente: `scripts/run-stage-pipeline.sh`).
@@ -150,6 +171,18 @@ Los códigos 404 indican "app viva pero sin endpoint en `/`" (Spring Boot por de
 ```
 
 **Stage timeouts:** integración 5 min, E2E 5 min, performance 60s @ 50 VUs.
+
+![Jenkinsfile.stage](screenshots/07-jenkinsfile-stage.png)
+*Fig. 3.2 — `Jenkinsfile.stage` con 11 stages (build, unit, deploy, port-forwards, integration, E2E, Locust).*
+
+![Stage pipeline ejecutándose](screenshots/15-stage-pipeline-output.png)
+*Fig. 3.3 — Salida de `scripts/run-stage-pipeline.sh` mostrando los stages completados.*
+
+![Pods en stage](screenshots/16-k8s-stage-pods.png)
+*Fig. 3.4 — `kubectl get pods -n circleguard-stage` con los 13 pods Running tras el deploy.*
+
+![Locust stats stage](screenshots/17-locust-stage-stats.png)
+*Fig. 3.5 — Reporte HTML de Locust de la corrida en stage: 5,304 requests, mediana 3 ms, 91 RPS agregado.*
 
 ### 3.3 Pipeline MASTER
 
@@ -177,6 +210,21 @@ Los códigos 404 indican "app viva pero sin endpoint en `/`" (Spring Boot por de
 - `buildDiscarder(numToKeepStr: '20')` — retiene 20 builds
 - Approval gate manual entre stage y master
 
+![Jenkinsfile.master](screenshots/08-jenkinsfile-master.png)
+*Fig. 3.6 — `Jenkinsfile.master` con los 11 stages incluyendo Approval Gate, Deploy to Production y Generate Release Notes.*
+
+![Master pipeline ejecutándose](screenshots/20-master-pipeline.png)
+*Fig. 3.7 — Salida del pipeline master mostrando build, deploy a stage, system tests, approval gate y deploy a producción.*
+
+![Pods en master](screenshots/21-k8s-master-pods.png)
+*Fig. 3.8 — `kubectl get pods -n circleguard-master` con 2 réplicas Running por servicio en producción.*
+
+![Release Notes generadas](screenshots/22-release-notes.png)
+*Fig. 3.9 — `RELEASE_NOTES_v1.0.*.md` con cabecera de identificación, cambios categorizados, test summary, services deployed, rollback procedure y CAB sign-off (Change Management compliant).*
+
+![Git tags](screenshots/26-git-tags.png)
+*Fig. 3.10 — Tag semver `v1.0.<N>` creado por el pipeline master al cierre del despliegue.*
+
 ---
 
 ## 4. Pruebas implementadas
@@ -200,6 +248,15 @@ IdentityEncryptionConverterAdditionalTest tests=5 failures=0 errors=0
 QrValidationServiceEdgeCasesTest          tests=6 failures=0 errors=0
 TOTAL                                     tests=25 PASSED
 ```
+
+![Unit tests pasando](screenshots/12-unit-tests-pass.png)
+*Fig. 4.1 — `./gradlew test` con `BUILD SUCCESSFUL` y todos los unit tests verdes.*
+
+![JUnit report](screenshots/13-junit-report.png)
+*Fig. 4.2 — Reporte HTML JUnit del auth-service con `JwtTokenServiceTest` y `QrTokenServiceTest` al 100%.*
+
+![Jacoco coverage](screenshots/14-jacoco-coverage.png)
+*Fig. 4.3 — Reporte Jacoco con cobertura por clase generado automáticamente con `finalizedBy("jacocoTestReport")`.*
 
 ### 4.2 Integration Tests (11 en 5 archivos)
 
@@ -236,6 +293,12 @@ TOTAL                                     tests=25 PASSED
 
 **`StressGateUser`** (pico de entrada 8 AM): `wait_time = between(0.1, 0.5)`, solo gate-validate.
 
+![Estructura de tests](screenshots/09-tests-structure.png)
+*Fig. 4.4 — Estructura de `tests/` con integration, e2e, performance y conftest compartidos.*
+
+![Locustfile](screenshots/10-locustfile.png)
+*Fig. 4.5 — `tests/performance/locustfile.py` con los pesos de `CampusUser` (70/15/10/5) y el perfil `StressGateUser`.*
+
 ---
 
 ## 5. Análisis de Resultados — Rendimiento
@@ -263,6 +326,9 @@ Datos crudos de `results/perf-stage_stats.csv` ordenados por endpoint:
 - **Tasa de error global 2.05%:** todos los errores son 404/401 esperados.
 
 ### 5.2 Master Pipeline (100 VUs, 120s)
+
+![Locust master stats](screenshots/27-locust-master.png)
+*Fig. 5.1 — Reporte HTML Locust del run en master: 21,852 requests, mediana 3 ms, 95p 8 ms, 99p 27 ms, 186 RPS agregado.*
 
 Datos de `results/perf-master_stats.csv`:
 
