@@ -5,14 +5,29 @@ publishes downstream `promotion.status.changed` events when a survey
 flagged with hasSymptoms=true arrives.
 """
 import json
+import socket
 import time
 import uuid
 import pytest
 
 
+def _kafka_broker_reachable_from_localhost() -> bool:
+    """Same reason as test_form_kafka_integration: Kafka advertises its
+    cluster-internal hostname ('kafka:9092') so producers cannot resolve
+    it from outside the cluster. Skip cleanly when we detect that."""
+    try:
+        socket.gethostbyname("kafka")
+        return True
+    except OSError:
+        return False
+
+
 @pytest.fixture(scope="module")
 def kafka_producer(kafka_bootstrap):
     pytest.importorskip("kafka")
+    if not _kafka_broker_reachable_from_localhost():
+        pytest.skip("Kafka advertises cluster-internal hostname 'kafka:9092' — "
+                    "test requires running inside the cluster (Jenkins agent)")
     from kafka import KafkaProducer
     from kafka.errors import NoBrokersAvailable
     try:
@@ -31,6 +46,9 @@ def kafka_producer(kafka_bootstrap):
 @pytest.fixture(scope="module")
 def status_changed_consumer(kafka_bootstrap):
     pytest.importorskip("kafka")
+    if not _kafka_broker_reachable_from_localhost():
+        pytest.skip("Kafka advertises cluster-internal hostname 'kafka:9092' — "
+                    "test requires running inside the cluster (Jenkins agent)")
     from kafka import KafkaConsumer
     from kafka.errors import NoBrokersAvailable
     try:

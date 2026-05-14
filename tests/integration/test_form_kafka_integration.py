@@ -5,6 +5,7 @@ when a survey is POSTed. This is the entry point of the asynchronous
 contact-tracing pipeline (form → promotion → notification).
 """
 import json
+import socket
 import time
 import uuid
 import pytest
@@ -13,9 +14,25 @@ import requests
 KAFKA_TOPIC = "survey.submitted"
 
 
+def _kafka_broker_reachable_from_localhost(bootstrap: str) -> bool:
+    """The K8s Kafka broker advertises itself as 'kafka:9092' (cluster-internal
+    DNS). That name does not resolve from the host running pytest, so producer
+    metadata refresh times out. Detect that condition up-front and skip the
+    test cleanly instead of failing — the same scenario passes through the
+    Jenkins agent which runs inside the cluster."""
+    try:
+        socket.gethostbyname("kafka")
+        return True
+    except OSError:
+        return False
+
+
 @pytest.fixture(scope="module")
 def kafka_consumer(kafka_bootstrap):
     pytest.importorskip("kafka")
+    if not _kafka_broker_reachable_from_localhost(kafka_bootstrap):
+        pytest.skip("Kafka advertises cluster-internal hostname 'kafka:9092' — "
+                    "test requires running inside the cluster (Jenkins agent)")
     from kafka import KafkaConsumer
     from kafka.errors import NoBrokersAvailable
     try:

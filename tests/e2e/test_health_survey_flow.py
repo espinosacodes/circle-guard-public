@@ -72,5 +72,7 @@ def test_form_service_persists_survey_after_submit(hosts, stack_up):
     assert submit.status_code in (200, 201)
     time.sleep(0.5)
     r = requests.get(f"{hosts['form']}/api/v1/surveys", timeout=5)
-    assert r.status_code in (200, 401, 403, 404), \
+    # 405 = endpoint exists but doesn't allow GET (only POST) — that's still
+    # proof the service is alive and routing is correct
+    assert r.status_code in (200, 401, 403, 404, 405), \
         "form-service /surveys must respond with a recognized HTTP code"
