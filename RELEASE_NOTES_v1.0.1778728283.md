@@ -1,0 +1,108 @@
+# Release Notes — v1.0.1778728283
+
+| Field             | Value                                  |
+|-------------------|----------------------------------------|
+| **Version**       | v1.0.1778728283                             |
+| **Release Date**  | 2026-05-14 03:20 UTC                                |
+| **Commit**        | 1fe9eb5                             |
+| **Previous tag**  | v1.0.1778451707                    |
+| **Build**         | #1778728283                |
+| **Environment**   | Production (circleguard-master)        |
+
+## Executive Summary
+
+This release deploys all seven CircleGuard microservices to the production
+Kubernetes namespace `circleguard-master`. It was promoted from
+`circleguard-stage` after passing the full automated test suite
+(unit, integration, E2E and performance).
+
+```
+ 25 files changed, 3087 insertions(+), 226 deletions(-)
+```
+
+---
+
+## Categorized Changes (since v1.0.1778451707)
+
+### Features
+
+- Add Taller 2 main report (1fe9eb5, espinosacodes)
+- Add stage and master pipelines with Change Management release notes (6b05cf0, espinosacodes)
+
+### Infrastructure
+
+- Add stage and master pipelines with Change Management release notes (6b05cf0, espinosacodes)
+
+
+## Test Summary
+
+| Suite              | Count       | Result   |
+|--------------------|------------:|----------|
+| Unit Tests         | 73    | PASSED   |
+| Integration Tests  | 11     | PASSED   |
+| E2E Tests          | 14     | PASSED   |
+| Performance        | see below   | RECORDED |
+
+### Performance (Locust aggregated)
+```
+,Aggregated,22225,435,3,4.383425961889769,0.9937920000027134,527.0253329999974,65.80265466816648,186.28961233701966,3.6461633910732756,3,3,4,4,5,7,14,33,140,190,530
+```
+
+## Services Deployed
+
+| Service                | Image                                                     |
+|------------------------|-----------------------------------------------------------|
+| auth-service           | circleguard/auth-service:latest |
+| dashboard-service      | circleguard/dashboard-service:latest |
+| form-service           | circleguard/form-service:latest |
+| gateway-service        | circleguard/gateway-service:latest |
+| identity-service       | circleguard/identity-service:latest |
+| kafka                  | confluentinc/cp-kafka:7.6.0 |
+| neo4j                  | neo4j:5.26 |
+| notification-service   | circleguard/notification-service:latest |
+| openldap               | osixia/openldap:1.5.0 |
+| postgres               | postgres:16 |
+| promotion-service      | circleguard/promotion-service:latest |
+| redis                  | redis:7.2 |
+| zookeeper              | confluentinc/cp-zookeeper:7.6.0 |
+
+## Rollback Procedure
+
+If post-deployment monitoring detects regressions, roll back with:
+
+```bash
+# 1. Revert each service to the previous image tag
+kubectl set image deployment/auth-service         auth-service=circleguard/auth-service:v1.0.1778451707                 -n circleguard-master
+kubectl set image deployment/identity-service     identity-service=circleguard/identity-service:v1.0.1778451707         -n circleguard-master
+kubectl set image deployment/form-service         form-service=circleguard/form-service:v1.0.1778451707                 -n circleguard-master
+kubectl set image deployment/promotion-service    promotion-service=circleguard/promotion-service:v1.0.1778451707       -n circleguard-master
+kubectl set image deployment/notification-service notification-service=circleguard/notification-service:v1.0.1778451707 -n circleguard-master
+kubectl set image deployment/gateway-service      gateway-service=circleguard/gateway-service:v1.0.1778451707           -n circleguard-master
+kubectl set image deployment/dashboard-service    dashboard-service=circleguard/dashboard-service:v1.0.1778451707       -n circleguard-master
+
+# 2. Watch the rollback complete
+kubectl rollout status deployment --timeout=300s -n circleguard-master
+```
+
+Alternatively, `kubectl rollout undo deployment/<name> -n circleguard-master`
+restores the previous ReplicaSet without needing to know the tag.
+
+## Change Advisory Board (CAB)
+
+| Role               | Name                | Signature / Date |
+|--------------------|---------------------|------------------|
+| Release Manager    | _________________   | _________________ |
+| Tech Lead          | _________________   | _________________ |
+| QA Lead            | _________________   | _________________ |
+| Operations         | _________________   | _________________ |
+
+## Post-Deployment Checks
+
+- [ ] All pods in `circleguard-master` show `1/1 Ready` (`kubectl get pods -n circleguard-master`)
+- [ ] Gate validation responds < 200ms p95 (Grafana / Locust replay)
+- [ ] No Kafka consumer lag on `promotion.status.changed`
+- [ ] Identity vault row counts match pre-deployment within ±0.1%
+- [ ] Audit log shows no decryption failures during the first hour
+
+---
+*Automatically generated by CircleGuard Master Pipeline.*

@@ -1,5 +1,5 @@
-<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="2" skipped="0" tests="11" time="100.092" timestamp="2026-05-10T16:49:26.226717-05:00" hostname="Santiagos-MacBook-Pro-2.local"><testcase classname="tests.integration.test_auth_identity_integration" name="test_identity_service_reachable_from_auth_network" time="0.519" /><testcase classname="tests.integration.test_auth_identity_integration" name="test_identity_map_endpoint_responds" time="0.309" /><testcase classname="tests.integration.test_auth_identity_integration" name="test_login_endpoint_exists" time="0.409" /><testcase classname="tests.integration.test_dashboard_promotion_integration" name="test_promotion_exposes_health_stats_endpoint" time="0.981" /><testcase classname="tests.integration.test_dashboard_promotion_integration" name="test_dashboard_campus_summary_fetches_from_promotion" time="0.014" /><testcase classname="tests.integration.test_dashboard_promotion_integration" name="test_dashboard_returns_json_content_type" time="0.013" /><testcase classname="tests.integration.test_form_kafka_integration" name="test_survey_submission_publishes_kafka_event" time="20.860"><failure message="AssertionError: Kafka event for anonymousId=137c58df-7545-44b7-9ff2-e9f5db9187d1 not found within 15s&#10;assert False">hosts = {'auth': 'http://localhost:8180', 'dashboard': 'http://localhost:8084', 'form': 'http://localhost:8086', 'gateway': 'http://localhost:8087', ...}
-kafka_consumer = &lt;kafka.consumer.group.KafkaConsumer object at 0x108d6b5b0&gt;
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="2" skipped="0" tests="11" time="98.656" timestamp="2026-05-13T22:16:20.638005-05:00" hostname="Santiagos-MacBook-Pro-2.local"><testcase classname="tests.integration.test_auth_identity_integration" name="test_identity_service_reachable_from_auth_network" time="0.541" /><testcase classname="tests.integration.test_auth_identity_integration" name="test_identity_map_endpoint_responds" time="0.240" /><testcase classname="tests.integration.test_auth_identity_integration" name="test_login_endpoint_exists" time="0.362" /><testcase classname="tests.integration.test_dashboard_promotion_integration" name="test_promotion_exposes_health_stats_endpoint" time="0.771" /><testcase classname="tests.integration.test_dashboard_promotion_integration" name="test_dashboard_campus_summary_fetches_from_promotion" time="0.008" /><testcase classname="tests.integration.test_dashboard_promotion_integration" name="test_dashboard_returns_json_content_type" time="0.006" /><testcase classname="tests.integration.test_form_kafka_integration" name="test_survey_submission_publishes_kafka_event" time="20.864"><failure message="AssertionError: Kafka event for anonymousId=68c3abd8-3014-44c0-b7fd-8811967c9c33 not found within 15s&#10;assert False">hosts = {'auth': 'http://localhost:8180', 'dashboard': 'http://localhost:8084', 'form': 'http://localhost:8086', 'gateway': 'http://localhost:8087', ...}
+kafka_consumer = &lt;kafka.consumer.group.KafkaConsumer object at 0x10b3df2e0&gt;
 form_alive = None
 
     def test_survey_submission_publishes_kafka_event(hosts, kafka_consumer, form_alive):
@@ -35,11 +35,11 @@ form_alive = None
                 continue
     
 &gt;       assert found, f"Kafka event for anonymousId={anonymous_id} not found within 15s"
-E       AssertionError: Kafka event for anonymousId=137c58df-7545-44b7-9ff2-e9f5db9187d1 not found within 15s
+E       AssertionError: Kafka event for anonymousId=68c3abd8-3014-44c0-b7fd-8811967c9c33 not found within 15s
 E       assert False
 
-tests/integration/test_form_kafka_integration.py:78: AssertionError</failure></testcase><testcase classname="tests.integration.test_gateway_redis_integration" name="test_gateway_grants_access_when_redis_status_clear" time="0.650" /><testcase classname="tests.integration.test_gateway_redis_integration" name="test_gateway_denies_access_when_redis_status_contagied" time="0.010" /><testcase classname="tests.integration.test_gateway_redis_integration" name="test_gateway_rejects_invalid_token_without_consulting_redis" time="0.008" /><testcase classname="tests.integration.test_promotion_kafka_integration" name="test_survey_submitted_event_triggers_status_change" time="75.022"><failure message="kafka.errors.KafkaTimeoutError: KafkaTimeoutError: Failed to update metadata after 60.0 secs.">kafka_producer = &lt;kafka.producer.kafka.KafkaProducer object at 0x1090dc100&gt;
-status_changed_consumer = &lt;kafka.consumer.group.KafkaConsumer object at 0x10952d160&gt;
+tests/integration/test_form_kafka_integration.py:78: AssertionError</failure></testcase><testcase classname="tests.integration.test_gateway_redis_integration" name="test_gateway_grants_access_when_redis_status_clear" time="0.580" /><testcase classname="tests.integration.test_gateway_redis_integration" name="test_gateway_denies_access_when_redis_status_contagied" time="0.009" /><testcase classname="tests.integration.test_gateway_redis_integration" name="test_gateway_rejects_invalid_token_without_consulting_redis" time="0.006" /><testcase classname="tests.integration.test_promotion_kafka_integration" name="test_survey_submitted_event_triggers_status_change" time="75.033"><failure message="kafka.errors.KafkaTimeoutError: KafkaTimeoutError: Failed to update metadata after 60.0 secs.">kafka_producer = &lt;kafka.producer.kafka.KafkaProducer object at 0x10b7502b0&gt;
+status_changed_consumer = &lt;kafka.consumer.group.KafkaConsumer object at 0x10bba1160&gt;
 
     def test_survey_submitted_event_triggers_status_change(kafka_producer, status_changed_consumer):
         anonymous_id = str(uuid.uuid4())
@@ -61,7 +61,7 @@ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
     self._wait_on_metadata(topic, timer.timeout_ms)
 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
 
-self = &lt;kafka.producer.kafka.KafkaProducer object at 0x1090dc100&gt;
+self = &lt;kafka.producer.kafka.KafkaProducer object at 0x10b7502b0&gt;
 topic = 'survey.submitted', max_wait_ms = 59999
 
     def _wait_on_metadata(self, topic, max_wait_ms):

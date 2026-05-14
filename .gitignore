@@ -54,3 +54,4 @@ neo4jdata/
 .git-sha
 .release-version
 .claude/
+.metals/
