@@ -1,0 +1,31 @@
+---
+# Feature toggles for dashboard-service in PRODUCTION (master).
+# See k8s/dev/dashboard-service-feature-toggles.yaml for usage notes.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dashboard-service-feature-toggles
+  namespace: circleguard-master
+  labels:
+    app: dashboard-service
+    component: feature-toggles
+    env: master
+data:
+  # PROD: ship dark, default safe. The GraphQL endpoint stays disabled
+  # until a Change Management ticket flips it on.
+  FEATURES_GRAPHQL_ENDPOINT_ENABLED: "false"
+  FEATURES_HOTSPOT_MAP_ENABLED: "true"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dashboard-service
+  namespace: circleguard-master
+spec:
+  template:
+    spec:
+      containers:
+        - name: dashboard-service
+          envFrom:
+            - configMapRef:
+                name: dashboard-service-feature-toggles

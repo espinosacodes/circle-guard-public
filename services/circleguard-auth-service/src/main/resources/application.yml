@@ -28,3 +28,47 @@ qr:
 
 server:
   port: 8180
+
+# --- Req 3: External configuration for the identity-service URL ---
+circleguard:
+  identity-service:
+    # Overridable via env (IDENTITY_SERVICE_URL) on K8s; see k8s/*/services.yml
+    url: ${IDENTITY_SERVICE_URL:http://localhost:8083}
+
+# --- Req 3: Circuit Breaker (Resilience4j) configuration ---
+resilience4j:
+  circuitbreaker:
+    instances:
+      identity-service:
+        registerHealthIndicator: true
+        slidingWindowType: COUNT_BASED
+        slidingWindowSize: 20
+        minimumNumberOfCalls: 10
+        failureRateThreshold: 50
+        waitDurationInOpenState: 10s
+        permittedNumberOfCallsInHalfOpenState: 2
+        automaticTransitionFromOpenToHalfOpenEnabled: true
+  retry:
+    instances:
+      identity-service:
+        maxAttempts: 3
+        waitDuration: 500ms
+        retryExceptions:
+          - org.springframework.web.client.RestClientException
+          - java.io.IOException
+
+# --- Req 3: Actuator + Prometheus so the breaker state ships metrics ---
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus,circuitbreakers,retries
+  endpoint:
+    health:
+      show-details: always
+  health:
+    circuitbreakers:
+      enabled: true
+  metrics:
+    tags:
+      application: ${spring.application.name}

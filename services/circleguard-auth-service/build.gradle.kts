@@ -20,6 +20,19 @@ dependencies {
     runtimeOnly("io.jsonwebtoken:jjwt-jackson:0.11.5")
     implementation("org.flywaydb:flyway-core")
     runtimeOnly("org.postgresql:postgresql")
+
+    // --- Req 3: Resilience pattern (Circuit Breaker + Retry) ---
+    implementation("org.springframework.boot:spring-boot-starter-webflux")
+    implementation("org.springframework.boot:spring-boot-starter-actuator")
+    implementation("org.springframework.boot:spring-boot-starter-aop")
+    implementation("io.github.resilience4j:resilience4j-spring-boot3:2.2.0")
+    implementation("io.github.resilience4j:resilience4j-reactor:2.2.0")
+    implementation("io.github.resilience4j:resilience4j-micrometer:2.2.0")
+    implementation("io.micrometer:micrometer-registry-prometheus")
+
     testImplementation("org.springframework.boot:spring-boot-starter-test")
     testImplementation("org.springframework.security:spring-security-test")
+    testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
+    testImplementation("com.squareup.okhttp3:okhttp:4.12.0")
+    testImplementation("org.awaitility:awaitility:4.2.1")
 }

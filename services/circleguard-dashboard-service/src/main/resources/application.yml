@@ -15,3 +15,24 @@ spring:
 
 server:
   port: 8084
+
+# --- Req 3.b: Feature toggles (configuration pattern) ---
+# Bound to com.circleguard.dashboard.config.FeatureToggles.
+# Override per environment via the K8s ConfigMap in
+# k8s/<env>/dashboard-service-feature-toggles.yaml (env vars
+# FEATURES_GRAPHQL_ENDPOINT_ENABLED, FEATURES_HOTSPOT_MAP_ENABLED, ...).
+features:
+  graphql-endpoint-enabled: false
+  hotspot-map-enabled: true
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus,configprops
+  endpoint:
+    health:
+      show-details: always
+  metrics:
+    tags:
+      application: ${spring.application.name}

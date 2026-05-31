@@ -1,0 +1,50 @@
+---
+# ============================================================================
+# Feature Toggle ConfigMap for the dashboard-service (DEV overlay)
+# ----------------------------------------------------------------------------
+# Backs com.circleguard.dashboard.config.FeatureToggles (Req 3.b).
+#
+# Spring Boot's relaxed binding turns FEATURES_GRAPHQL_ENDPOINT_ENABLED into
+# features.graphql-endpoint-enabled, so the env-var contract here matches
+# the YAML in src/main/resources/application.yml.
+#
+# How to flip a toggle without a redeploy:
+#   1. kubectl -n circleguard-dev edit configmap dashboard-service-feature-toggles
+#   2. Save (vim :wq).
+#   3. kubectl -n circleguard-dev rollout restart deployment dashboard-service
+#
+# See docs/PATTERNS.md and docs/CHANGE_MANAGEMENT.md for the full procedure.
+# ============================================================================
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dashboard-service-feature-toggles
+  namespace: circleguard-dev
+  labels:
+    app: dashboard-service
+    component: feature-toggles
+    env: dev
+data:
+  # DEV: experimental endpoints ON so we can validate them.
+  FEATURES_GRAPHQL_ENDPOINT_ENABLED: "true"
+  FEATURES_HOTSPOT_MAP_ENABLED: "true"
+---
+# Patch snippet — apply with:
+#   kubectl -n circleguard-dev patch deployment dashboard-service \
+#     --patch-file k8s/dev/dashboard-service-feature-toggles.yaml \
+#     --type strategic
+# Or copy these envFrom lines into k8s/dev/services.yml under the dashboard
+# container spec.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dashboard-service
+  namespace: circleguard-dev
+spec:
+  template:
+    spec:
+      containers:
+        - name: dashboard-service
+          envFrom:
+            - configMapRef:
+                name: dashboard-service-feature-toggles
