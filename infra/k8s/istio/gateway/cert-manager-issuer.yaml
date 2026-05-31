@@ -1,0 +1,35 @@
+# -----------------------------------------------------------------------------
+# cert-manager ClusterIssuer for Let's Encrypt staging.
+#
+# Use this for the demo / smoke tests. Browsers will warn about the
+# untrusted CA — that is expected for the staging environment. Swap to the
+# production ACME server (https://acme-v02.api.letsencrypt.org/directory)
+# once everything works end-to-end.
+#
+# Prereq:
+#   - cert-manager v1.14+ is installed in the cluster.
+#   - The Istio ingressgateway has a stable public IP and a matching DNS A
+#     record so the HTTP-01 challenge can succeed.
+#
+# Install cert-manager (if missing):
+#   helm repo add jetstack https://charts.jetstack.io
+#   helm upgrade --install cert-manager jetstack/cert-manager \
+#     --namespace cert-manager --create-namespace \
+#     --set installCRDs=true
+# -----------------------------------------------------------------------------
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-staging
+  labels:
+    app.kubernetes.io/part-of: circleguard
+spec:
+  acme:
+    server: https://acme-staging-v02.api.letsencrypt.org/directory
+    email: platform-sre@circleguard.example.com
+    privateKeySecretRef:
+      name: letsencrypt-staging-account-key
+    solvers:
+      - http01:
+          ingress:
+            class: istio

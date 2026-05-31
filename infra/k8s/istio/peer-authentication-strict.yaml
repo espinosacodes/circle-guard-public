@@ -1,0 +1,31 @@
+# -----------------------------------------------------------------------------
+# Mesh-wide STRICT mTLS.
+#
+# Lives in istio-system with no `selector` block, so it applies to *every*
+# namespace that joins the mesh. After this is applied:
+#   - Every pod-to-pod call must present a valid SPIFFE identity issued by
+#     istiod (the in-cluster CA).
+#   - Plain HTTP between sidecar'd pods is rejected.
+#   - Clients without sidecars (legacy jobs, ad-hoc kubectl exec curls) can
+#     still call services *if* the corresponding AuthorizationPolicy allows
+#     them — but their traffic will be unencrypted at the network layer and
+#     rejected by STRICT. Use PERMISSIVE on a per-namespace basis only as a
+#     migration aid.
+#
+# Verify:
+#   kubectl get peerauthentication -A
+#   istioctl authn tls-check <pod>.<ns>
+#
+# Reference: https://istio.io/latest/docs/tasks/security/authentication/mtls-migration/
+# -----------------------------------------------------------------------------
+apiVersion: security.istio.io/v1beta1
+kind: PeerAuthentication
+metadata:
+  name: default
+  namespace: istio-system
+  labels:
+    app.kubernetes.io/part-of: circleguard
+    app.kubernetes.io/component: service-mesh
+spec:
+  mtls:
+    mode: STRICT

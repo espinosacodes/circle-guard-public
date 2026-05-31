@@ -1,0 +1,26 @@
+# -----------------------------------------------------------------------------
+# Default-deny baseline for circleguard-prod.
+#
+# An AuthorizationPolicy with no `rules` block denies ALL requests inside
+# the selected namespace. With this in place, every legitimate east-west
+# call must be explicitly allowed by a follow-up AuthorizationPolicy (see
+# gateway-to-services.yaml and health-center-to-promotion.yaml).
+#
+# We deliberately scope this to prod only — dev/stage keep the permissive
+# default to make iteration fast.
+#
+# Verify:
+#   kubectl run -n circleguard-prod curl --rm -it --image=curlimages/curl \
+#     --restart=Never -- curl -s -o /dev/null -w '%{http_code}\n' http://promotion-service
+#   # Expect: 403
+# -----------------------------------------------------------------------------
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: default-deny-all
+  namespace: circleguard-prod
+  labels:
+    app.kubernetes.io/part-of: circleguard
+    app.kubernetes.io/component: zero-trust
+spec:
+  {}  # no `action`, no `rules` => deny everything

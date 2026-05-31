@@ -1,0 +1,39 @@
+# -----------------------------------------------------------------------------
+# Retry + timeout policy for gateway-service (the ingress edge).
+#
+# Why at the mesh layer?
+#   - Resilience4j inside the gateway already gives us granular retries per
+#     downstream client, but it cannot retry the *outermost* call that the
+#     gateway itself fronts (the call from end-user → gateway). Envoy can.
+#   - 2s end-to-end SLO with up to 3 attempts gives roughly 600 ms budget
+#     per attempt — comfortably under our 800 ms p95 target.
+#
+# Retry conditions:
+#   - 5xx              -> the upstream replied with a real error
+#   - gateway-error    -> 502/503/504 (LB / connection-level)
+#   - connect-failure  -> TCP RST or refused
+#   - reset            -> upstream sent a TCP RST mid-stream
+#
+# We do NOT retry on 4xx — those are caller errors and retries waste budget.
+# -----------------------------------------------------------------------------
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: gateway-service-retries
+  namespace: circleguard-prod
+  labels:
+    app.kubernetes.io/part-of: circleguard
+    app.kubernetes.io/component: resilience
+spec:
+  hosts:
+    - gateway-service.circleguard-prod.svc.cluster.local
+  http:
+    - route:
+        - destination:
+            host: gateway-service.circleguard-prod.svc.cluster.local
+      timeout: 2s
+      retries:
+        attempts: 3
+        perTryTimeout: 600ms
+        retryOn: "5xx,gateway-error,connect-failure,reset"
+        retryRemoteLocalities: false

@@ -1,0 +1,50 @@
+# -----------------------------------------------------------------------------
+# Only the health-center role may call promotion-service.
+#
+# promotion-service drives critical workflows (Saga orchestration for student
+# promotion/graduation). We restrict it at the mesh layer in addition to the
+# Spring Security @PreAuthorize annotations in the app.
+#
+# Mechanism: the gateway service signs an outbound JWT after authenticating
+# the caller; the JWT's `role` claim carries the user's logical role. Istio
+# RequestAuthentication + AuthorizationPolicy.when[].key=request.auth.claims[role]
+# evaluate the claim and short-circuit unauthorised traffic at the Envoy
+# sidecar — before the Spring app sees a single byte.
+#
+# Pre-req: a RequestAuthentication must validate the JWT issuer + JWKS. The
+# definition below is the minimum that goes with this AuthorizationPolicy.
+# -----------------------------------------------------------------------------
+apiVersion: security.istio.io/v1beta1
+kind: RequestAuthentication
+metadata:
+  name: jwt-from-auth-service
+  namespace: circleguard-prod
+spec:
+  selector:
+    matchLabels:
+      app: promotion-service
+  jwtRules:
+    - issuer: "https://auth.circleguard.example.com"
+      jwksUri: "http://auth-service.circleguard-prod.svc.cluster.local:8180/.well-known/jwks.json"
+      forwardOriginalToken: true
+---
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: only-health-center-can-call-promotion
+  namespace: circleguard-prod
+  labels:
+    app.kubernetes.io/part-of: circleguard
+    app.kubernetes.io/component: zero-trust
+spec:
+  action: ALLOW
+  selector:
+    matchLabels:
+      app: promotion-service
+  rules:
+    - from:
+        - source:
+            requestPrincipals: ["*"]   # any caller that presents a valid JWT
+      when:
+        - key: request.auth.claims[role]
+          values: ["health-center"]

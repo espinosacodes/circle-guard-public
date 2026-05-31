@@ -1,0 +1,52 @@
+# -----------------------------------------------------------------------------
+# Envoy-level circuit breaker for identity-service.
+#
+# This complements the Resilience4j circuit breaker that lives inside the
+# Spring Boot apps. Layering:
+#
+#   ┌────────────────────────────────────────────────────────────────┐
+#   │ Resilience4j (in-process)                                      │
+#   │  - knows the business semantics: "skip the call, return        │
+#   │    fallback DTO, log a metric"                                 │
+#   │  - reacts to *downstream* the caller already knows about       │
+#   ├────────────────────────────────────────────────────────────────┤
+#   │ Envoy outlier-detection (this DestinationRule)                 │
+#   │  - knows nothing about business logic                          │
+#   │  - ejects a bad replica from the LB pool for 30s on 5x 5xx     │
+#   │  - protects every service even if the dev forgot @Annotation   │
+#   └────────────────────────────────────────────────────────────────┘
+#
+# Tuning rationale:
+#   maxConnections        — keep TCP fan-out bounded; identity is small
+#   http2MaxRequests      — ceiling for concurrent in-flight HTTP/2 streams
+#   maxRequestsPerConnection — periodically rebalance (1000 fits PSP defaults)
+#   outlierDetection      — eject a replica that returns 5 consecutive 5xx
+#                           within 30s; keep it ejected for 30s; cap at 50 %
+#                           of the pool so we never starve the service.
+# -----------------------------------------------------------------------------
+apiVersion: networking.istio.io/v1beta1
+kind: DestinationRule
+metadata:
+  name: identity-service-circuit-breaker
+  namespace: circleguard-prod
+  labels:
+    app.kubernetes.io/part-of: circleguard
+    app.kubernetes.io/component: resilience
+spec:
+  host: identity-service.circleguard-prod.svc.cluster.local
+  trafficPolicy:
+    connectionPool:
+      tcp:
+        maxConnections: 100
+        connectTimeout: 500ms
+      http:
+        http1MaxPendingRequests: 50
+        http2MaxRequests: 200
+        maxRequestsPerConnection: 1000
+        maxRetries: 3
+    outlierDetection:
+      consecutive5xxErrors: 5
+      interval: 30s
+      baseEjectionTime: 30s
+      maxEjectionPercent: 50
+      minHealthPercent: 50

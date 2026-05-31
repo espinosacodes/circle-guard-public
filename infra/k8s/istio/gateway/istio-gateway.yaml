@@ -1,0 +1,96 @@
+# -----------------------------------------------------------------------------
+# Public ingress for CircleGuard via the Istio IngressGateway.
+#
+# Topology:
+#                                ┌──────────────────────────┐
+#   client ──HTTPS:443──▶ LB ──▶ │ istio-ingressgateway     │ ──HTTP──▶ gateway-service
+#                                │ (Envoy, TLS terminated)  │
+#                                └──────────────────────────┘
+#
+# TLS:
+#   - The Certificate is issued by cert-manager (see cert-manager-issuer.yaml)
+#     using a ClusterIssuer named `letsencrypt-staging`.
+#   - cert-manager stores the cert in a Secret called `circleguard-tls-cert`
+#     in the `istio-system` namespace (where the gateway pod lives).
+#   - For production swap to `letsencrypt-prod` after verifying the staging
+#     flow end-to-end.
+#
+# Assumption: the ClusterIssuer for letsencrypt-staging already exists. If
+# not, apply cert-manager-issuer.yaml first.
+# -----------------------------------------------------------------------------
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: circleguard-tls-cert
+  namespace: istio-system
+spec:
+  secretName: circleguard-tls-cert
+  duration: 2160h    # 90 days
+  renewBefore: 360h  # 15 days
+  issuerRef:
+    name: letsencrypt-staging
+    kind: ClusterIssuer
+  commonName: app.circleguard.example.com
+  dnsNames:
+    - app.circleguard.example.com
+    - api.circleguard.example.com
+---
+apiVersion: networking.istio.io/v1beta1
+kind: Gateway
+metadata:
+  name: circleguard-gateway
+  namespace: istio-system
+  labels:
+    app.kubernetes.io/part-of: circleguard
+spec:
+  selector:
+    istio: ingressgateway   # default label of the istio-ingressgateway pod
+  servers:
+    # HTTP -> redirect to HTTPS
+    - port:
+        number: 80
+        name: http
+        protocol: HTTP
+      hosts:
+        - "app.circleguard.example.com"
+        - "api.circleguard.example.com"
+      tls:
+        httpsRedirect: true
+    # HTTPS with TLS termination at Envoy
+    - port:
+        number: 443
+        name: https
+        protocol: HTTPS
+      hosts:
+        - "app.circleguard.example.com"
+        - "api.circleguard.example.com"
+      tls:
+        mode: SIMPLE
+        credentialName: circleguard-tls-cert  # references the cert-manager Secret
+---
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: circleguard-edge-routes
+  namespace: istio-system
+spec:
+  hosts:
+    - "app.circleguard.example.com"
+    - "api.circleguard.example.com"
+  gateways:
+    - circleguard-gateway
+  http:
+    - match:
+        - uri: { prefix: "/api/" }
+      route:
+        - destination:
+            host: gateway-service.circleguard-prod.svc.cluster.local
+            port:
+              number: 8080
+    - match:
+        - uri: { prefix: "/" }
+      route:
+        - destination:
+            host: gateway-service.circleguard-prod.svc.cluster.local
+            port:
+              number: 8080

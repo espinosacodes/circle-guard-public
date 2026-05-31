@@ -1,0 +1,57 @@
+# -----------------------------------------------------------------------------
+# Allow the gateway-service to call every backend in circleguard-prod.
+#
+# The gateway is the single ingress entry point (Spring Cloud Gateway).
+# Once the default-deny baseline is in place, the gateway pod's SPIFFE
+# identity must be explicitly authorised to hit the seven backends.
+#
+# Identity format:
+#   cluster.local/ns/circleguard-prod/sa/<service-account>
+#
+# We assume the gateway runs under the `gateway-service` ServiceAccount.
+# If you renamed it, update the `principals` block below.
+# -----------------------------------------------------------------------------
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-gateway-to-backends
+  namespace: circleguard-prod
+  labels:
+    app.kubernetes.io/part-of: circleguard
+    app.kubernetes.io/component: zero-trust
+spec:
+  action: ALLOW
+  selector:
+    matchLabels:
+      tier: backend          # every backend Deployment carries `tier: backend`
+  rules:
+    - from:
+        - source:
+            principals:
+              - "cluster.local/ns/circleguard-prod/sa/gateway-service"
+      to:
+        - operation:
+            methods: ["GET", "POST", "PUT", "PATCH", "DELETE"]
+---
+# Auth-service is special: it MUST be reachable from the gateway for the
+# initial /login flow before any JWT exists. Kept in a separate rule so it
+# is obvious in code review.
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-gateway-to-auth
+  namespace: circleguard-prod
+spec:
+  action: ALLOW
+  selector:
+    matchLabels:
+      app: auth-service
+  rules:
+    - from:
+        - source:
+            principals:
+              - "cluster.local/ns/circleguard-prod/sa/gateway-service"
+      to:
+        - operation:
+            paths: ["/login", "/refresh", "/auth/*"]
+            methods: ["POST", "GET"]

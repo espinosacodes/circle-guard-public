@@ -1,0 +1,80 @@
+# -----------------------------------------------------------------------------
+# Canary release for dashboard-service.
+#
+# This file assumes TWO Deployments exist in circleguard-prod, both with
+# label `app: dashboard-service` plus a distinguishing `version: v1` or
+# `version: v2` label, for example:
+#
+#   metadata:
+#     name: dashboard-service-v1
+#     labels: { app: dashboard-service, version: v1, tier: backend }
+#   ---
+#   metadata:
+#     name: dashboard-service-v2
+#     labels: { app: dashboard-service, version: v2, tier: backend }
+#
+# The DestinationRule maps those labels to `subsets`. The VirtualService
+# then declares the traffic split.
+#
+# Traffic-shifting recipe (no rolling restart, no DNS change):
+#
+#   1) Initial roll-out: 90 % v1 / 10 % v2 (this file as-is)
+#   2) After 30 min of clean SLOs, bump to 50 / 50:
+#        kubectl patch vs dashboard-service -n circleguard-prod --type merge \
+#          -p '{"spec":{"http":[{"route":[
+#                {"destination":{"host":"dashboard-service","subset":"v1"},"weight":50},
+#                {"destination":{"host":"dashboard-service","subset":"v2"},"weight":50}]}]}}'
+#   3) After another 30 min, promote v2 to 100 %:
+#        kubectl patch vs dashboard-service -n circleguard-prod --type merge \
+#          -p '{"spec":{"http":[{"route":[
+#                {"destination":{"host":"dashboard-service","subset":"v2"},"weight":100}]}]}}'
+#   4) Once stable, scale dashboard-service-v1 to 0 replicas.
+#
+# Rollback at any point: re-apply this file (snaps back to 90/10).
+# -----------------------------------------------------------------------------
+apiVersion: networking.istio.io/v1beta1
+kind: DestinationRule
+metadata:
+  name: dashboard-service
+  namespace: circleguard-prod
+  labels:
+    app.kubernetes.io/part-of: circleguard
+    app.kubernetes.io/component: canary
+spec:
+  host: dashboard-service.circleguard-prod.svc.cluster.local
+  subsets:
+    - name: v1
+      labels:
+        version: v1
+    - name: v2
+      labels:
+        version: v2
+  trafficPolicy:
+    # Sticky-ish session affinity by user — protects users that already saw
+    # v2 from seeing v1 on the next request (and vice versa).
+    loadBalancer:
+      consistentHash:
+        httpHeaderName: x-user-id
+---
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: dashboard-service
+  namespace: circleguard-prod
+  labels:
+    app.kubernetes.io/part-of: circleguard
+    app.kubernetes.io/component: canary
+spec:
+  hosts:
+    - dashboard-service.circleguard-prod.svc.cluster.local
+  http:
+    - name: canary-split
+      route:
+        - destination:
+            host: dashboard-service.circleguard-prod.svc.cluster.local
+            subset: v1
+          weight: 90
+        - destination:
+            host: dashboard-service.circleguard-prod.svc.cluster.local
+            subset: v2
+          weight: 10
