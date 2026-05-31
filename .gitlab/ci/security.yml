@@ -56,7 +56,7 @@ security:fs:
 # per service. Pulls from Artifact Registry with the same SA used to push.
 # ---------------------------------------------------------------------
 security:image:
-  stage: security
+  stage: security-image
   extends: .trivy_base
   needs:
     - job: package:image
@@ -111,7 +111,7 @@ security:image:
 # out-of-band (GCS bucket) — see docs/SBOM.md.
 # =====================================================================
 sbom:
-  stage: security
+  stage: security-image
   image:
     name: anchore/syft:v1.8.0
     entrypoint: [""]

@@ -29,8 +29,9 @@ stages:
   - build
   - test
   - quality
-  - security
-  - package
+  - security         # source/dependency scans (Trivy fs, secrets)
+  - package          # Kaniko build + push to Artifact Registry
+  - security-image   # image-level scans + SBOM (need pushed images, so post-package)
   - deploy-dev
   - deploy-stage
   - e2e
