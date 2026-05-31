@@ -59,7 +59,7 @@ and a live timeline of injections.
 | Setting                                                | Value                |
 |--------------------------------------------------------|----------------------|
 | Default namespace selector                             | `circleguard-dev`    |
-| Forbidden namespaces                                   | `circleguard-prod`, `circleguard-stage`, `circleguard-master`, `istio-system`, `kube-system`, `observability`, `chaos-mesh` |
+| Forbidden namespaces                                   | `circleguard-stage`, `circleguard-master`, `istio-system`, `kube-system`, `observability`, `chaos-mesh` |
 | Pod kill blast radius (per experiment)                 | 1 pod                |
 | Max experiment duration                                | 60 minutes           |
 | Suspend switch                                         | `kubectl -n chaos-mesh scale deploy chaos-controller-manager --replicas=0` |

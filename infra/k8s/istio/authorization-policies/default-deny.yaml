@@ -1,5 +1,5 @@
 # -----------------------------------------------------------------------------
-# Default-deny baseline for circleguard-prod.
+# Default-deny baseline for circleguard-master.
 #
 # An AuthorizationPolicy with no `rules` block denies ALL requests inside
 # the selected namespace. With this in place, every legitimate east-west
@@ -10,7 +10,7 @@
 # default to make iteration fast.
 #
 # Verify:
-#   kubectl run -n circleguard-prod curl --rm -it --image=curlimages/curl \
+#   kubectl run -n circleguard-master curl --rm -it --image=curlimages/curl \
 #     --restart=Never -- curl -s -o /dev/null -w '%{http_code}\n' http://promotion-service
 #   # Expect: 403
 # -----------------------------------------------------------------------------
@@ -18,7 +18,7 @@ apiVersion: security.istio.io/v1beta1
 kind: AuthorizationPolicy
 metadata:
   name: default-deny-all
-  namespace: circleguard-prod
+  namespace: circleguard-master
   labels:
     app.kubernetes.io/part-of: circleguard
     app.kubernetes.io/component: zero-trust

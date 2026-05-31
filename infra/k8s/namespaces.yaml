@@ -1,0 +1,46 @@
+# -----------------------------------------------------------------------------
+# CircleGuard application namespaces.
+#
+# One Namespace per environment. The "master" namespace is the prod-equivalent
+# (Taller 2 legacy naming — see docs/NAMESPACES.md). The GKE cluster that hosts
+# `circleguard-master` is itself named `circleguard-prod-gke` via Terraform.
+#
+# Labels:
+#   istio-injection=enabled              -> Istio control plane auto-injects sidecars
+#   monitoring=enabled                   -> kube-prometheus-stack scrapes objects here
+#   pod-security.kubernetes.io/enforce   -> PSA level (master only: restricted)
+#
+# Apply:
+#   kubectl apply -f infra/k8s/namespaces.yaml
+# -----------------------------------------------------------------------------
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: circleguard-dev
+  labels:
+    environment: dev
+    istio-injection: enabled
+    monitoring: enabled
+    app.kubernetes.io/part-of: circleguard
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: circleguard-stage
+  labels:
+    environment: stage
+    istio-injection: enabled
+    monitoring: enabled
+    app.kubernetes.io/part-of: circleguard
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: circleguard-master
+  labels:
+    environment: master
+    istio-injection: enabled
+    monitoring: enabled
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: latest
+    app.kubernetes.io/part-of: circleguard

@@ -30,9 +30,10 @@ and contributes to **Req 8 — Seguridad** (mTLS + AuthorizationPolicy).
 GCP project: `circleguard-final-92308`. Region: `us-central1`.
 
 > The script labels three namespaces:
-> `circleguard-dev`, `circleguard-stage`, `circleguard-prod`. If your cluster
-> still uses the older `circleguard-master` namespace, the script will detect
-> and label it too — see [`install.sh`](./install.sh).
+> `circleguard-dev`, `circleguard-stage`, `circleguard-master`. See
+> [`install.sh`](./install.sh). Note: the prod-equivalent K8s namespace is
+> historically named `circleguard-master` (Taller 2 legacy) even though the
+> GKE cluster is `circleguard-prod-gke` — see [`docs/NAMESPACES.md`](../../../docs/NAMESPACES.md).
 
 ---
 
@@ -133,7 +134,7 @@ file demonstrates a canary release of `dashboard-service`. The mechanism:
 1. **DestinationRule** declares two `subsets`: `v1` (label `version: v1`)
    and `v2` (label `version: v2`). Both subsets are backed by independent
    Deployments — see the comments in the file.
-2. **VirtualService** routes `dashboard-service.circleguard-prod.svc` with
+2. **VirtualService** routes `dashboard-service.circleguard-master.svc` with
    weight 90 / 10 (v1 / v2 respectively).
 3. To bump the canary share, edit the `weight` fields and re-apply. There
    is no rolling restart, no DNS flip, no LB drain.
@@ -149,11 +150,11 @@ kubectl run -n circleguard-dev curl --rm -it --image=curlimages/curl --restart=N
   sh -c 'while true; do curl -s dashboard-service/health | head -c 50; echo; sleep 0.2; done'
 
 # 3. Flip to 50/50 (edit weights then re-apply)
-kubectl patch virtualservice dashboard-service -n circleguard-prod --type merge \
+kubectl patch virtualservice dashboard-service -n circleguard-master --type merge \
   -p '{"spec":{"http":[{"route":[{"destination":{"host":"dashboard-service","subset":"v1"},"weight":50},{"destination":{"host":"dashboard-service","subset":"v2"},"weight":50}]}]}}'
 
 # 4. Promote v2 to 100 %
-kubectl patch virtualservice dashboard-service -n circleguard-prod --type merge \
+kubectl patch virtualservice dashboard-service -n circleguard-master --type merge \
   -p '{"spec":{"http":[{"route":[{"destination":{"host":"dashboard-service","subset":"v2"},"weight":100}]}]}}'
 ```
 

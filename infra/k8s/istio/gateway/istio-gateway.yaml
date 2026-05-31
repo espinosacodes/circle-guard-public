@@ -84,13 +84,13 @@ spec:
         - uri: { prefix: "/api/" }
       route:
         - destination:
-            host: gateway-service.circleguard-prod.svc.cluster.local
+            host: gateway-service.circleguard-master.svc.cluster.local
             port:
               number: 8080
     - match:
         - uri: { prefix: "/" }
       route:
         - destination:
-            host: gateway-service.circleguard-prod.svc.cluster.local
+            host: gateway-service.circleguard-master.svc.cluster.local
             port:
               number: 8080

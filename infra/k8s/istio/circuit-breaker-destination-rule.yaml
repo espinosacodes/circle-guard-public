@@ -28,12 +28,12 @@ apiVersion: networking.istio.io/v1beta1
 kind: DestinationRule
 metadata:
   name: identity-service-circuit-breaker
-  namespace: circleguard-prod
+  namespace: circleguard-master
   labels:
     app.kubernetes.io/part-of: circleguard
     app.kubernetes.io/component: resilience
 spec:
-  host: identity-service.circleguard-prod.svc.cluster.local
+  host: identity-service.circleguard-master.svc.cluster.local
   trafficPolicy:
     connectionPool:
       tcp:

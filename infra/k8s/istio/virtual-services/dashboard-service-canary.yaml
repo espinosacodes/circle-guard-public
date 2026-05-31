@@ -1,7 +1,7 @@
 # -----------------------------------------------------------------------------
 # Canary release for dashboard-service.
 #
-# This file assumes TWO Deployments exist in circleguard-prod, both with
+# This file assumes TWO Deployments exist in circleguard-master, both with
 # label `app: dashboard-service` plus a distinguishing `version: v1` or
 # `version: v2` label, for example:
 #
@@ -20,12 +20,12 @@
 #
 #   1) Initial roll-out: 90 % v1 / 10 % v2 (this file as-is)
 #   2) After 30 min of clean SLOs, bump to 50 / 50:
-#        kubectl patch vs dashboard-service -n circleguard-prod --type merge \
+#        kubectl patch vs dashboard-service -n circleguard-master --type merge \
 #          -p '{"spec":{"http":[{"route":[
 #                {"destination":{"host":"dashboard-service","subset":"v1"},"weight":50},
 #                {"destination":{"host":"dashboard-service","subset":"v2"},"weight":50}]}]}}'
 #   3) After another 30 min, promote v2 to 100 %:
-#        kubectl patch vs dashboard-service -n circleguard-prod --type merge \
+#        kubectl patch vs dashboard-service -n circleguard-master --type merge \
 #          -p '{"spec":{"http":[{"route":[
 #                {"destination":{"host":"dashboard-service","subset":"v2"},"weight":100}]}]}}'
 #   4) Once stable, scale dashboard-service-v1 to 0 replicas.
@@ -36,12 +36,12 @@ apiVersion: networking.istio.io/v1beta1
 kind: DestinationRule
 metadata:
   name: dashboard-service
-  namespace: circleguard-prod
+  namespace: circleguard-master
   labels:
     app.kubernetes.io/part-of: circleguard
     app.kubernetes.io/component: canary
 spec:
-  host: dashboard-service.circleguard-prod.svc.cluster.local
+  host: dashboard-service.circleguard-master.svc.cluster.local
   subsets:
     - name: v1
       labels:
@@ -60,21 +60,21 @@ apiVersion: networking.istio.io/v1beta1
 kind: VirtualService
 metadata:
   name: dashboard-service
-  namespace: circleguard-prod
+  namespace: circleguard-master
   labels:
     app.kubernetes.io/part-of: circleguard
     app.kubernetes.io/component: canary
 spec:
   hosts:
-    - dashboard-service.circleguard-prod.svc.cluster.local
+    - dashboard-service.circleguard-master.svc.cluster.local
   http:
     - name: canary-split
       route:
         - destination:
-            host: dashboard-service.circleguard-prod.svc.cluster.local
+            host: dashboard-service.circleguard-master.svc.cluster.local
             subset: v1
           weight: 90
         - destination:
-            host: dashboard-service.circleguard-prod.svc.cluster.local
+            host: dashboard-service.circleguard-master.svc.cluster.local
             subset: v2
           weight: 10

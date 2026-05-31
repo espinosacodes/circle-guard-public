@@ -45,7 +45,7 @@ spec:
     matchNames:
       - circleguard-dev
       - circleguard-stage
-      - circleguard-prod
+      - circleguard-master
   selector:
     matchLabels:
       app.kubernetes.io/name: circleguard-${svc}-service

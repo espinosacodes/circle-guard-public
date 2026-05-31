@@ -18,21 +18,21 @@ apiVersion: security.istio.io/v1beta1
 kind: RequestAuthentication
 metadata:
   name: jwt-from-auth-service
-  namespace: circleguard-prod
+  namespace: circleguard-master
 spec:
   selector:
     matchLabels:
       app: promotion-service
   jwtRules:
     - issuer: "https://auth.circleguard.example.com"
-      jwksUri: "http://auth-service.circleguard-prod.svc.cluster.local:8180/.well-known/jwks.json"
+      jwksUri: "http://auth-service.circleguard-master.svc.cluster.local:8180/.well-known/jwks.json"
       forwardOriginalToken: true
 ---
 apiVersion: security.istio.io/v1beta1
 kind: AuthorizationPolicy
 metadata:
   name: only-health-center-can-call-promotion
-  namespace: circleguard-prod
+  namespace: circleguard-master
   labels:
     app.kubernetes.io/part-of: circleguard
     app.kubernetes.io/component: zero-trust

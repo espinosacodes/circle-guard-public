@@ -17,7 +17,7 @@ ISTIO_VERSION="${ISTIO_VERSION:-1.22.3}"
 ISTIO_HOME="${HOME}/.istioctl"
 ISTIO_BIN="${ISTIO_HOME}/istio-${ISTIO_VERSION}/bin"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-NAMESPACES=("circleguard-dev" "circleguard-stage" "circleguard-prod" "circleguard-master")
+NAMESPACES=("circleguard-dev" "circleguard-stage" "circleguard-master")
 SKIP_KIALI="${SKIP_KIALI:-0}"
 
 log()  { printf "\033[1;34m[istio]\033[0m %s\n" "$*"; }
