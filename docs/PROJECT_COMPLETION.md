@@ -2,8 +2,10 @@
 
 **Course:** IngeSoft V
 **Student:** Santiago Espinosa
-**Repository:** [`espinosacodes/circle-guard-public`](https://gitlab.com/espinosacodes/circle-guard-public) *(placeholder — to be replaced with the actual GitLab URL before submission)*
+**Repository:** [`espinosacodes/circle-guard-final`](https://gitlab.com/espinosacodes/circle-guard-final)
 **Submission date:** 2026-05-30
+**Live GitLab project:** https://gitlab.com/espinosacodes/circle-guard-final
+**Kanban board:** https://gitlab.com/espinosacodes/circle-guard-final/-/boards/11343311
 
 > Reviewers: start here. This is the single index to every other artefact
 > in the repo. Each row of the rubric coverage table below points to the
@@ -15,7 +17,7 @@
 
 **CircleGuard** is a privacy-first campus contact-tracing and fencing
 system. The IngeSoft V final-project work transformed the existing
-seven-microservice prototype (the Taller 2 baseline,
+eight-microservice prototype (the Taller 2 baseline,
 [`REPORTE_TALLER_2.md`](../REPORTE_TALLER_2.md)) into a production-shape
 platform: eight services running on a multi-cloud GKE-primary /
 AKS-secondary topology, fully Terraform-described, deployed by a
@@ -124,16 +126,20 @@ are honestly flagged so the reviewer is not surprised.
 
 | What                          | URL                                                                                          |
 |-------------------------------|----------------------------------------------------------------------------------------------|
-| GitLab repository             | `https://gitlab.com/<group>/circle-guard-public` *(placeholder)*                            |
-| GitLab Issue Board            | `https://gitlab.com/<group>/circle-guard-public/-/boards` *(placeholder)*                   |
-| GitLab Milestones (sprints)   | `https://gitlab.com/<group>/circle-guard-public/-/milestones` *(placeholder)*               |
-| GitLab Pipelines              | `https://gitlab.com/<group>/circle-guard-public/-/pipelines` *(placeholder)*                |
+| GitLab repository             | https://gitlab.com/espinosacodes/circle-guard-final                                          |
+| GitLab Kanban board           | https://gitlab.com/espinosacodes/circle-guard-final/-/boards/11343311                       |
+| GitLab Issues (23 total)      | https://gitlab.com/espinosacodes/circle-guard-final/-/issues                                |
+| GitLab Milestones (sprints)   | https://gitlab.com/espinosacodes/circle-guard-final/-/milestones                            |
+| GitLab Pipelines              | https://gitlab.com/espinosacodes/circle-guard-final/-/pipelines                             |
+| GCP Project Console           | https://console.cloud.google.com/home/dashboard?project=circleguard-final-92308             |
+| GKE Cluster (dev)             | https://console.cloud.google.com/kubernetes/list?project=circleguard-final-92308            |
+| Cloud SQL (dev)               | https://console.cloud.google.com/sql/instances?project=circleguard-final-92308              |
 | Demo video (20–30 min)        | `https://youtu.be/<id>` *(placeholder — record per [`VIDEO_SCRIPT_FINAL.md`](../VIDEO_SCRIPT_FINAL.md))* |
 | Presentation slides           | `https://docs.google.com/presentation/d/<id>` *(placeholder)*                                |
-| Grafana (prod)                | `https://grafana.circleguard.edu` *(placeholder, behind SSO)*                                |
-| Kiali (Istio topology)        | `https://kiali.circleguard.edu` *(placeholder, behind SSO)*                                  |
-| Jaeger (traces)               | `https://jaeger.circleguard.edu` *(placeholder, behind SSO)*                                 |
-| Chaos Mesh dashboard          | `https://chaos.circleguard.edu` *(dev only, placeholder)*                                    |
+| Grafana (port-forwarded dev)  | `http://localhost:3000` after `./infra/k8s/observability/install.sh` + port-forward         |
+| Kiali (Istio topology)        | `http://localhost:20001` after `istioctl dashboard kiali`                                    |
+| Jaeger (traces)               | `http://localhost:16686` after `kubectl port-forward -n observability svc/jaeger-query 16686:16686` |
+| Chaos Mesh dashboard          | `http://localhost:2333` after `kubectl port-forward -n chaos-mesh svc/chaos-dashboard 2333:2333` |
 | Looker Studio cost dashboard  | template — `https://lookerstudio.google.com/c/u/0/reporting/9012a8d2-78e7-4900-b385-95a6dabd6e51` (template referenced by [`docs/COSTS.md`](COSTS.md) §3.5) |
 
 Once the GitLab project is published and the video is recorded, this
