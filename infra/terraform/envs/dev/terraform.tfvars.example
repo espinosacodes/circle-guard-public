@@ -1,0 +1,18 @@
+gcp_project_id = "REPLACE-WITH-YOUR-GCP-PROJECT-ID"
+gcp_region     = "us-central1"
+project_prefix = "circleguard"
+env            = "dev"
+
+# Networking (RFC1918, no overlap with other envs)
+subnet_cidr   = "10.10.0.0/20"
+pods_cidr     = "10.20.0.0/16"
+services_cidr = "10.30.0.0/20"
+
+# GKE — cheap defaults
+gke_machine_type    = "e2-standard-2"
+gke_node_count_min  = 1
+gke_node_count_max  = 3
+gke_preemptible     = true
+
+# Cloud SQL — cheapest tier for dev
+cloudsql_tier = "db-f1-micro"

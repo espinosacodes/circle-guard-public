@@ -1,0 +1,5 @@
+gcp_project_id    = "REPLACE-WITH-YOUR-GCP-PROJECT-ID"
+gcp_region        = "us-central1"
+project_prefix    = "circleguard"
+# Leave null to auto-derive ("circleguard-tfstate-<project-id>"), or set explicitly:
+# state_bucket_name = "circleguard-tfstate-mycustom"

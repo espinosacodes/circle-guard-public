@@ -1,0 +1,31 @@
+gcp_project_id = "REPLACE-WITH-YOUR-GCP-PROJECT-ID"
+gcp_region     = "us-central1"
+project_prefix = "circleguard"
+env            = "stage"
+
+# GCP networking (stage uses the 10.40-10.60 range so it never overlaps dev)
+subnet_cidr   = "10.40.0.0/20"
+pods_cidr     = "10.50.0.0/16"
+services_cidr = "10.60.0.0/20"
+
+# GKE
+gke_machine_type   = "e2-standard-2"
+gke_node_count_min = 1
+gke_node_count_max = 4
+gke_preemptible    = true
+
+# CloudSQL — 1 vCPU / 3.75 GiB
+cloudsql_tier = "db-custom-1-3840"
+
+# Azure
+azure_subscription_id   = "REPLACE-WITH-YOUR-AZURE-SUBSCRIPTION-ID"
+azure_location          = "eastus"
+azure_vnet_cidr         = "10.70.0.0/16"
+azure_aks_subnet_cidr   = "10.70.0.0/20"
+azure_appgw_subnet_cidr = "10.70.16.0/24"
+
+aks_system_vm_size = "Standard_B2s"
+aks_user_vm_size   = "Standard_B2s"
+aks_user_node_min  = 1
+aks_user_node_max  = 3
+aks_spot_enabled   = true

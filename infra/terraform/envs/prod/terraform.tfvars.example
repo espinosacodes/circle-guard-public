@@ -1,0 +1,33 @@
+gcp_project_id = "REPLACE-WITH-YOUR-GCP-PROJECT-ID"
+gcp_region     = "us-central1"
+project_prefix = "circleguard"
+env            = "prod"
+
+# GCP networking (prod CIDRs)
+subnet_cidr   = "10.80.0.0/20"
+pods_cidr     = "10.90.0.0/16"
+services_cidr = "10.100.0.0/20"
+
+# GKE — production HA
+gke_machine_type   = "e2-standard-4"
+gke_node_count_min = 2
+gke_node_count_max = 6
+gke_preemptible    = false
+
+# CloudSQL — REGIONAL HA, 2 vCPU / 7.5 GiB
+cloudsql_tier              = "db-custom-2-7680"
+cloudsql_availability_type = "REGIONAL"
+
+# Azure
+azure_subscription_id   = "REPLACE-WITH-YOUR-AZURE-SUBSCRIPTION-ID"
+azure_location          = "eastus"
+azure_vnet_cidr         = "10.110.0.0/16"
+azure_aks_subnet_cidr   = "10.110.0.0/20"
+azure_appgw_subnet_cidr = "10.110.16.0/24"
+
+aks_sku_tier       = "Standard"
+aks_system_vm_size = "Standard_D2s_v5"
+aks_user_vm_size   = "Standard_D2s_v5"
+aks_user_node_min  = 2
+aks_user_node_max  = 6
+aks_spot_enabled   = true
