@@ -1,0 +1,42 @@
+# =====================================================================
+# CircleGuard - End-to-End Tests (post deploy-stage)
+# =====================================================================
+# Runs the pytest suite under tests/e2e/ against the freshly deployed
+# stage environment. Mirrors the Jenkinsfile.stage "E2E Tests on Stage"
+# stage but talks to a real ingress instead of port-forwards.
+# =====================================================================
+
+e2e:stage:
+  stage: e2e
+  image: python:3.12-slim
+  needs:
+    - job: deploy:stage
+      artifacts: false
+  variables:
+    STAGE_BASE_URL: "https://stage.circleguard.example.com"
+    CG_AUTH_URL: "${STAGE_BASE_URL}/auth"
+    CG_IDENTITY_URL: "${STAGE_BASE_URL}/identity"
+    CG_FORM_URL: "${STAGE_BASE_URL}/form"
+    CG_PROMOTION_URL: "${STAGE_BASE_URL}/promotion"
+    CG_NOTIFICATION_URL: "${STAGE_BASE_URL}/notification"
+    CG_GATEWAY_URL: "${STAGE_BASE_URL}/gateway"
+    CG_DASHBOARD_URL: "${STAGE_BASE_URL}/dashboard"
+  before_script:
+    - apt-get update -qq && apt-get install -y -qq curl
+    - python -m pip install --upgrade pip
+    - pip install -r tests/requirements.txt
+  script:
+    - mkdir -p results
+    - pytest tests/e2e -v
+        --junitxml=results/e2e-stage.xml
+        --tb=short
+  artifacts:
+    when: always
+    expire_in: 1 week
+    reports:
+      junit: results/e2e-stage.xml
+    paths:
+      - results/e2e-stage.xml
+  rules:
+    - if: '$CI_COMMIT_BRANCH =~ /^release\//'
+    - if: '$CI_COMMIT_BRANCH == "main" || $CI_COMMIT_BRANCH == "master"'

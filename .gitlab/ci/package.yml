@@ -1,0 +1,74 @@
+# =====================================================================
+# CircleGuard - Package Stage (Kaniko -> Artifact Registry)
+# =====================================================================
+# We avoid Docker-in-Docker by using gcr.io/kaniko-project/executor.
+# Authenticates to Google Artifact Registry with GCP_SA_KEY (JSON key
+# stored as a CI File-type variable or masked Variable).
+#
+# Image naming:
+#   ${GCP_AR_REGION}-docker.pkg.dev/${GCP_PROJECT}/circleguard/<svc>:<sha>
+# plus a moving "<branch>" / "latest" tag so K8s deployments can pull
+# the most recent image for that environment.
+# =====================================================================
+
+package:image:
+  stage: package
+  image:
+    name: gcr.io/kaniko-project/executor:v1.21.0-debug
+    entrypoint: [""]
+  needs:
+    - job: build:all
+      artifacts: true
+    - job: test:unit
+      artifacts: false
+  parallel:
+    matrix:
+      - SERVICE:
+          - auth-service
+          - dashboard-service
+          - file-service
+          - form-service
+          - gateway-service
+          - identity-service
+          - notification-service
+          - promotion-service
+  variables:
+    SERVICE_FULL: "circleguard-${SERVICE}"
+    IMAGE: "${AR_REPO}/${SERVICE}"
+  before_script:
+    # Write the GCP SA key Kaniko will use for Artifact Registry pushes.
+    - mkdir -p /kaniko/.docker
+    - echo "${GCP_SA_KEY}" > /kaniko/sa.json
+    - |
+      cat > /kaniko/.docker/config.json <<JSON
+      {
+        "auths": {
+          "${GCP_AR_REGION}-docker.pkg.dev": {
+            "auth": "$(printf '_json_key:%s' "$(cat /kaniko/sa.json)" | base64 | tr -d '\n')"
+          }
+        }
+      }
+      JSON
+  script:
+    # Pick the moving tag based on the branch — keeps `:dev`, `:stage`,
+    # `:prod` always pointing at the most recent successful build.
+    - |
+      MOVING_TAG="dev"
+      if [ "$CI_COMMIT_BRANCH" = "main" ] || [ "$CI_COMMIT_BRANCH" = "master" ]; then MOVING_TAG="prod"; fi
+      if echo "$CI_COMMIT_BRANCH" | grep -q '^release/'; then MOVING_TAG="stage"; fi
+      if [ -n "$CI_COMMIT_TAG" ]; then MOVING_TAG="$CI_COMMIT_TAG"; fi
+      echo "Pushing ${IMAGE}:${IMAGE_TAG} (+ :${MOVING_TAG})"
+    - /kaniko/executor
+        --context "${CI_PROJECT_DIR}/services/${SERVICE_FULL}"
+        --dockerfile "${CI_PROJECT_DIR}/services/${SERVICE_FULL}/Dockerfile"
+        --destination "${IMAGE}:${IMAGE_TAG}"
+        --destination "${IMAGE}:${MOVING_TAG}"
+        --cache=true
+        --cache-ttl=24h
+        --snapshot-mode=redo
+        --use-new-run
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "develop"'
+    - if: '$CI_COMMIT_BRANCH =~ /^release\//'
+    - if: '$CI_COMMIT_BRANCH == "main" || $CI_COMMIT_BRANCH == "master"'
+    - if: '$CI_COMMIT_TAG'

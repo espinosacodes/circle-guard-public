@@ -1,0 +1,52 @@
+# =====================================================================
+# CircleGuard - Slack Notifications
+# =====================================================================
+# Reusable `.notify_slack` template + concrete jobs that fire only on
+# pipeline failure (any stage) and on successful production deploys.
+#
+# Required CI/CD variable:
+#   - SLACK_WEBHOOK_URL  (masked, incoming-webhook URL)
+# =====================================================================
+
+.notify_slack:
+  image: curlimages/curl:8.7.1
+  variables:
+    SLACK_CHANNEL: "#circleguard-cicd"
+  script:
+    - |
+      if [ -z "${SLACK_WEBHOOK_URL}" ]; then
+        echo "SLACK_WEBHOOK_URL not set — skipping notification."
+        exit 0
+      fi
+      curl -fsSL -X POST -H 'Content-Type: application/json' \
+        --data "{
+          \"channel\": \"${SLACK_CHANNEL}\",
+          \"username\": \"circleguard-ci\",
+          \"icon_emoji\": \"${ICON:-:rotating_light:}\",
+          \"text\": \"${MESSAGE}\"
+        }" \
+        "${SLACK_WEBHOOK_URL}"
+
+notify:failure:
+  extends: .notify_slack
+  stage: notify
+  variables:
+    ICON: ":x:"
+    MESSAGE: ":x: *Pipeline FAILED* on `${CI_PROJECT_PATH}` — branch `${CI_COMMIT_REF_NAME}` (${CI_COMMIT_SHORT_SHA}). <${CI_PIPELINE_URL}|view pipeline> | <${CI_COMMIT_AUTHOR}>"
+  rules:
+    - when: on_failure
+
+notify:prod-success:
+  extends: .notify_slack
+  stage: notify
+  variables:
+    ICON: ":rocket:"
+    MESSAGE: ":rocket: *Production deploy SUCCEEDED* on `${CI_PROJECT_PATH}` — `${CI_COMMIT_REF_NAME}` (${CI_COMMIT_SHORT_SHA}). <${CI_PIPELINE_URL}|view pipeline>"
+  needs:
+    - job: deploy:prod
+      artifacts: false
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^v[0-9]+\.[0-9]+\.[0-9]+/'
+      when: on_success
+    - if: '$CI_COMMIT_BRANCH == "main" || $CI_COMMIT_BRANCH == "master"'
+      when: on_success

@@ -1,0 +1,79 @@
+# =====================================================================
+# CircleGuard - Build Stage
+# =====================================================================
+# Mirrors Jenkinsfile.dev "Build (compile + bootJar)" stage but uses a
+# `parallel:matrix:` so all 8 services build in parallel slots.
+# =====================================================================
+
+.gradle_base:
+  image: eclipse-temurin:21-jdk
+  before_script:
+    - chmod +x ./gradlew
+    - ./gradlew --version
+  cache:
+    key:
+      files:
+        - build.gradle.kts
+        - settings.gradle.kts
+    paths:
+      - .gradle/caches
+      - .gradle/wrapper
+
+# ---------------------------------------------------------------------
+# Full-monorepo build — runs on default branch / tags / when shared
+# Gradle files change. Produces all bootJars for downstream stages.
+# ---------------------------------------------------------------------
+build:all:
+  stage: build
+  extends: .gradle_base
+  script:
+    - ./gradlew clean bootJar --no-daemon --parallel --build-cache
+  artifacts:
+    name: "bootjars-${CI_COMMIT_SHORT_SHA}"
+    expire_in: 1 day
+    paths:
+      - services/*/build/libs/*.jar
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main" || $CI_COMMIT_BRANCH == "master" || $CI_COMMIT_BRANCH == "develop" || $CI_COMMIT_TAG'
+    - changes:
+        - build.gradle.kts
+        - settings.gradle.kts
+        - gradle/**/*
+        - .gitlab-ci.yml
+        - .gitlab/ci/**/*
+
+# ---------------------------------------------------------------------
+# Per-service build — fires only when that service's tree changed.
+# Uses `parallel:matrix:` so the same job definition spawns one slot
+# per service (GitLab CI shows them as separate jobs in the UI).
+# ---------------------------------------------------------------------
+build:service:
+  stage: build
+  extends: .gradle_base
+  parallel:
+    matrix:
+      - SERVICE:
+          - circleguard-auth-service
+          - circleguard-dashboard-service
+          - circleguard-file-service
+          - circleguard-form-service
+          - circleguard-gateway-service
+          - circleguard-identity-service
+          - circleguard-notification-service
+          - circleguard-promotion-service
+  script:
+    - ./gradlew ":services:${SERVICE}:clean" ":services:${SERVICE}:bootJar" --no-daemon --build-cache
+  artifacts:
+    name: "${SERVICE}-${CI_COMMIT_SHORT_SHA}"
+    expire_in: 1 day
+    paths:
+      - services/${SERVICE}/build/libs/*.jar
+  rules:
+    # Only fire on MR / feature branches when at least one service or shared
+    # Gradle file changed. Default-branch commits are handled by build:all.
+    - if: '$CI_COMMIT_BRANCH == "main" || $CI_COMMIT_BRANCH == "master" || $CI_COMMIT_BRANCH == "develop" || $CI_COMMIT_TAG'
+      when: never
+    - changes:
+        - services/${SERVICE}/**/*
+        - build.gradle.kts
+        - settings.gradle.kts

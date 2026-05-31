@@ -1,0 +1,50 @@
+# =====================================================================
+# CircleGuard - OWASP ZAP Baseline Scan (post deploy-stage)
+# =====================================================================
+# Runs `zap-baseline.py` against the stage gateway. This is a passive
+# scan only (safe to run against shared envs). HTML + JSON reports are
+# uploaded as artifacts. Non-zero exit means findings — we mark
+# allow_failure: true so a warning report doesn't block the pipeline,
+# but we still surface it as a GitLab artifact link.
+# =====================================================================
+
+zap:baseline:
+  stage: zap
+  image:
+    name: owasp/zap2docker-stable:2.14.0
+    entrypoint: [""]
+  needs:
+    - job: deploy:stage
+      artifacts: false
+  variables:
+    ZAP_TARGET: "https://stage.circleguard.example.com"
+    ZAP_HTML_REPORT: "zap-baseline.html"
+    ZAP_JSON_REPORT: "zap-baseline.json"
+    ZAP_MD_REPORT: "zap-baseline.md"
+  before_script:
+    - mkdir -p /zap/wrk
+    - cp -r . /zap/wrk/src || true
+  script:
+    # `-I` => don't fail on warnings, `-T` => max scan minutes, `-m` => spider mins.
+    - zap-baseline.py
+        -t "${ZAP_TARGET}"
+        -r "${ZAP_HTML_REPORT}"
+        -J "${ZAP_JSON_REPORT}"
+        -w "${ZAP_MD_REPORT}"
+        -T 5
+        -m 2
+        -I
+    - cp /zap/wrk/${ZAP_HTML_REPORT} . 2>/dev/null || true
+    - cp /zap/wrk/${ZAP_JSON_REPORT} . 2>/dev/null || true
+    - cp /zap/wrk/${ZAP_MD_REPORT}   . 2>/dev/null || true
+  artifacts:
+    when: always
+    expire_in: 1 month
+    paths:
+      - zap-baseline.html
+      - zap-baseline.json
+      - zap-baseline.md
+  allow_failure: true
+  rules:
+    - if: '$CI_COMMIT_BRANCH =~ /^release\//'
+    - if: '$CI_COMMIT_BRANCH == "main" || $CI_COMMIT_BRANCH == "master"'
