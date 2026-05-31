@@ -1,21 +1,26 @@
 # Dedicated namespace for the CircleGuard observability stack.
 #
-# Pod Security Admission (PSA) is configured to "restricted" — the strictest
-# tier — because every component we install here (Prometheus, Grafana, Loki,
-# Promtail, Jaeger, Alertmanager) ships compatible Helm charts. Promtail
-# normally needs hostPath access to /var/log; we override its securityContext
-# in loki/values.yaml so it still works under restricted PSA.
+# Pod Security Admission (PSA) is "baseline" rather than "restricted" because:
+#   - node-exporter (part of kube-prometheus-stack) needs hostNetwork + hostPID
+#     + hostPath access to /proc and /sys to expose node metrics
+#   - Grafana's init-chown-data runs as root with the CHOWN capability
+#   - Promtail mounts /var/log via hostPath to ship pod logs
+# All three are blocked by "restricted". "baseline" still blocks privileged
+# containers and dangerous capabilities, but allows hostPath/hostNetwork —
+# which is the correct tier for a kube-system-adjacent observability stack.
+# Application namespaces (circleguard-*) keep the stricter "restricted"
+# enforcement.
 apiVersion: v1
 kind: Namespace
 metadata:
   name: observability
   labels:
     name: observability
-    # Pod Security Admission — enforce the restricted profile.
-    pod-security.kubernetes.io/enforce: restricted
+    # Pod Security Admission — see comment above for the baseline rationale.
+    pod-security.kubernetes.io/enforce: baseline
     pod-security.kubernetes.io/enforce-version: latest
-    pod-security.kubernetes.io/audit: restricted
-    pod-security.kubernetes.io/warn: restricted
+    pod-security.kubernetes.io/audit: baseline
+    pod-security.kubernetes.io/warn: baseline
     # Mark the namespace so our ServiceMonitor selector picks up workloads
     # scheduled inside it (kube-state-metrics, node-exporter, etc).
     monitoring: enabled

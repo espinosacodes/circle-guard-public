@@ -314,3 +314,6 @@ dashboard_test_output.txt
 *.dump
 *.heapdump
 *.hprof
+
+# Live cluster credentials (never commit)
+.live/

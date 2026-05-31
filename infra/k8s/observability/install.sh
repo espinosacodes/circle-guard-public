@@ -56,8 +56,13 @@ fi
 
 # --- 4. kube-prometheus-stack ----------------------------------------------
 echo "==> Installing kube-prometheus-stack"
-# envsubst injects ENVIRONMENT into externalLabels (rendered values.yaml)
-ENV_VAL="${ENVIRONMENT}" envsubst < "${SCRIPT_DIR}/kube-prometheus-stack/values.yaml" \
+# envsubst injects ENVIRONMENT into externalLabels (rendered values.yaml).
+# Must `export` the var so the subprocess can see it — otherwise envsubst
+# silently replaces ${ENVIRONMENT} with empty string and the resulting
+# `environment:` YAML key becomes null, which the Prometheus CRD rejects
+# with: spec.externalLabels.environment: Invalid value: "null".
+export ENVIRONMENT
+envsubst < "${SCRIPT_DIR}/kube-prometheus-stack/values.yaml" \
   > /tmp/kps-values.rendered.yaml || \
   cp "${SCRIPT_DIR}/kube-prometheus-stack/values.yaml" /tmp/kps-values.rendered.yaml
 helm upgrade --install kps prometheus-community/kube-prometheus-stack \
