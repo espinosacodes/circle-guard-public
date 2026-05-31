@@ -1,0 +1,51 @@
+# -----------------------------------------------------------------------------
+# Counterpart to scale-down-dev.yaml: bring the dev GKE node pool back to
+# 1 node at 07:00 UTC (≈ 02:00 COT). Workloads HPA-scale back up from there.
+#
+# Reuses the same ServiceAccount / IAM bindings created by scale-down-dev.
+# That manifest must be applied first (it owns the namespace and SA).
+# -----------------------------------------------------------------------------
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: gke-scale-up-dev
+  namespace: circleguard-finops
+  labels:
+    app.kubernetes.io/part-of: circleguard
+    app.kubernetes.io/component: finops
+spec:
+  schedule: "0 7 * * *"           # 07:00 UTC daily
+  timeZone: "Etc/UTC"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      ttlSecondsAfterFinished: 86400
+      template:
+        spec:
+          serviceAccountName: finops-cluster-resizer
+          restartPolicy: OnFailure
+          containers:
+            - name: gcloud
+              image: gcr.io/google.com/cloudsdktool/cloud-sdk:slim
+              env:
+                - { name: GCP_PROJECT, value: "circleguard-final-92308" }
+                - { name: GKE_CLUSTER, value: "circleguard-dev-gke" }
+                - { name: GKE_REGION,  value: "us-central1" }
+                - { name: NODE_POOL,   value: "default-pool" }
+              command: ["/bin/bash", "-euo", "pipefail", "-c"]
+              args:
+                - |
+                  echo "[finops] Scaling ${NODE_POOL} on ${GKE_CLUSTER} back to 1 node"
+                  gcloud container clusters resize "${GKE_CLUSTER}" \
+                    --node-pool "${NODE_POOL}" \
+                    --num-nodes 1 \
+                    --region "${GKE_REGION}" \
+                    --project "${GCP_PROJECT}" \
+                    --quiet
+                  echo "[finops] Done."
+              resources:
+                requests: { cpu: 50m, memory: 64Mi }
+                limits:   { cpu: 200m, memory: 256Mi }

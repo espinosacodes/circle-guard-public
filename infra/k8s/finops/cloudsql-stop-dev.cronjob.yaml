@@ -1,0 +1,101 @@
+# -----------------------------------------------------------------------------
+# Stop the dev Cloud SQL instance at 22:00 UTC and start it again at 07:00.
+#
+# Two CronJobs, one ServiceAccount. The SA needs roles/cloudsql.admin on the
+# project (or just on the dev instance via a resource-level condition).
+#
+# Bootstrap (one-time):
+#   gcloud iam service-accounts create finops-cloudsql-toggler \
+#     --project=circleguard-final-92308
+#   gcloud projects add-iam-policy-binding circleguard-final-92308 \
+#     --member="serviceAccount:finops-cloudsql-toggler@circleguard-final-92308.iam.gserviceaccount.com" \
+#     --role="roles/cloudsql.admin" \
+#     --condition='expression=resource.name == "projects/circleguard-final-92308/instances/circleguard-dev-pg",title=dev_only'
+#   gcloud iam service-accounts add-iam-policy-binding \
+#     finops-cloudsql-toggler@circleguard-final-92308.iam.gserviceaccount.com \
+#     --role="roles/iam.workloadIdentityUser" \
+#     --member="serviceAccount:circleguard-final-92308.svc.id.goog[circleguard-finops/finops-cloudsql-toggler]"
+# -----------------------------------------------------------------------------
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: finops-cloudsql-toggler
+  namespace: circleguard-finops
+  annotations:
+    iam.gke.io/gcp-service-account: finops-cloudsql-toggler@circleguard-final-92308.iam.gserviceaccount.com
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: cloudsql-stop-dev
+  namespace: circleguard-finops
+  labels:
+    app.kubernetes.io/part-of: circleguard
+    app.kubernetes.io/component: finops
+spec:
+  schedule: "0 22 * * *"
+  timeZone: "Etc/UTC"
+  concurrencyPolicy: Forbid
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      ttlSecondsAfterFinished: 86400
+      template:
+        spec:
+          serviceAccountName: finops-cloudsql-toggler
+          restartPolicy: OnFailure
+          containers:
+            - name: gcloud
+              image: gcr.io/google.com/cloudsdktool/cloud-sdk:slim
+              env:
+                - { name: GCP_PROJECT,  value: "circleguard-final-92308" }
+                - { name: SQL_INSTANCE, value: "circleguard-dev-pg" }
+              command: ["/bin/bash", "-euo", "pipefail", "-c"]
+              args:
+                - |
+                  echo "[finops] Stopping Cloud SQL ${SQL_INSTANCE}"
+                  gcloud sql instances patch "${SQL_INSTANCE}" \
+                    --activation-policy NEVER \
+                    --project "${GCP_PROJECT}" \
+                    --quiet
+              resources:
+                requests: { cpu: 50m, memory: 64Mi }
+                limits:   { cpu: 200m, memory: 256Mi }
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: cloudsql-start-dev
+  namespace: circleguard-finops
+  labels:
+    app.kubernetes.io/part-of: circleguard
+    app.kubernetes.io/component: finops
+spec:
+  schedule: "0 7 * * *"
+  timeZone: "Etc/UTC"
+  concurrencyPolicy: Forbid
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      ttlSecondsAfterFinished: 86400
+      template:
+        spec:
+          serviceAccountName: finops-cloudsql-toggler
+          restartPolicy: OnFailure
+          containers:
+            - name: gcloud
+              image: gcr.io/google.com/cloudsdktool/cloud-sdk:slim
+              env:
+                - { name: GCP_PROJECT,  value: "circleguard-final-92308" }
+                - { name: SQL_INSTANCE, value: "circleguard-dev-pg" }
+              command: ["/bin/bash", "-euo", "pipefail", "-c"]
+              args:
+                - |
+                  echo "[finops] Starting Cloud SQL ${SQL_INSTANCE}"
+                  gcloud sql instances patch "${SQL_INSTANCE}" \
+                    --activation-policy ALWAYS \
+                    --project "${GCP_PROJECT}" \
+                    --quiet
+              resources:
+                requests: { cpu: 50m, memory: 64Mi }
+                limits:   { cpu: 200m, memory: 256Mi }

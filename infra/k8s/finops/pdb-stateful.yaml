@@ -1,0 +1,58 @@
+# -----------------------------------------------------------------------------
+# PodDisruptionBudgets for stateful workloads on spot pools.
+#
+# Spot reclamations (GCP preemption / Azure spot eviction) trigger
+# voluntary disruptions. Without a PDB the autoscaler / drain tooling
+# could evict every replica at once and break quorum (Kafka), the
+# Postgres pgbouncer pool (postgres-proxy), or the Redis cluster.
+#
+# `maxUnavailable: 1` is a deliberately conservative choice:
+#   * Kafka:   3+ brokers, 2 must remain to keep min.insync.replicas=2
+#   * Postgres pooler: stateless but bursty connection churn breaks if all
+#                      replicas go at once
+#   * Redis:   3+ nodes (cluster), losing 1 keeps quorum
+#
+# Apply once per environment that has those workloads. The selectors match
+# the labels used in the existing k8s/dev/infrastructure.yml manifests.
+# -----------------------------------------------------------------------------
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: kafka-pdb
+  namespace: circleguard-dev
+  labels:
+    app.kubernetes.io/part-of: circleguard
+    app.kubernetes.io/component: finops
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: kafka
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: postgres-proxy-pdb
+  namespace: circleguard-dev
+  labels:
+    app.kubernetes.io/part-of: circleguard
+    app.kubernetes.io/component: finops
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: postgres-proxy
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: redis-pdb
+  namespace: circleguard-dev
+  labels:
+    app.kubernetes.io/part-of: circleguard
+    app.kubernetes.io/component: finops
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: redis

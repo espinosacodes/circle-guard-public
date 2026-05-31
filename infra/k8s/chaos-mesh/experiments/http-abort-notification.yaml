@@ -1,0 +1,39 @@
+# -----------------------------------------------------------------------------
+# HTTP-abort chaos: notification-service
+#
+# Hypothesis:
+#   When 30% of outbound notification webhooks are aborted, the producer
+#   side requeues them to the dead-letter topic and a background worker
+#   retries with exponential backoff. End users see no missing emails.
+#
+# Steady-state metric:
+#   - `notification_dlq_depth_total` rises by ~30% of injected requests
+#     within 60s, then drains to 0 within 5 min after experiment ends.
+#   - `notifications_delivered_total` continues to grow.
+#
+# Blast radius: 30% of HTTP responses on port 8080 of notification-service
+#               are aborted, 5 min, dev only.
+# -----------------------------------------------------------------------------
+apiVersion: chaos-mesh.org/v1alpha1
+kind: HTTPChaos
+metadata:
+  name: http-abort-notification
+  namespace: circleguard-dev
+  labels:
+    app.kubernetes.io/part-of: circleguard
+    app.kubernetes.io/component: chaos
+    experiment: http-abort-notification
+spec:
+  mode: all
+  duration: "5m"
+  selector:
+    namespaces:
+      - circleguard-dev
+    labelSelectors:
+      app: notification-service
+  target: Response
+  port: 8080
+  abort: true
+  # 30% sample rate by hashing the URL — produces a deterministic 30% slice.
+  request_headers:
+    chaos-mesh-sample-rate: "30"

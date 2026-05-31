@@ -1,0 +1,35 @@
+# -----------------------------------------------------------------------------
+# Pod-kill chaos: promotion-service
+#
+# Hypothesis:
+#   The Saga orchestrator inside promotion-service compensates correctly when
+#   one of its replicas is killed mid-workflow. No partial promotions, no
+#   stuck transactions.
+#
+# Steady-state metric:
+#   - `saga_completed_total` continues to grow
+#   - `saga_failed_total`    stays flat
+#   - Kafka consumer lag for `promotion-events` returns to 0 within 60s
+#
+# Blast radius: 1 pod, every 10 min, for 1 hour, ONLY in circleguard-dev.
+# -----------------------------------------------------------------------------
+apiVersion: chaos-mesh.org/v1alpha1
+kind: PodChaos
+metadata:
+  name: pod-kill-promotion
+  namespace: circleguard-dev
+  labels:
+    app.kubernetes.io/part-of: circleguard
+    app.kubernetes.io/component: chaos
+    experiment: pod-kill-promotion
+spec:
+  action: pod-kill
+  mode: one             # exactly 1 pod per injection
+  duration: "60m"       # total experiment window
+  scheduler:
+    cron: "@every 10m"  # one kill per 10 min
+  selector:
+    namespaces:
+      - circleguard-dev
+    labelSelectors:
+      app: promotion-service

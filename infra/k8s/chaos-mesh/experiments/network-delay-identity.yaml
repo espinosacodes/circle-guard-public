@@ -1,0 +1,45 @@
+# -----------------------------------------------------------------------------
+# Network-delay chaos: identity-service
+#
+# Hypothesis:
+#   Callers of identity-service see latency spike, the Resilience4j circuit
+#   breaker for `identityClient` transitions OPEN, and fallback responses
+#   are served until the breaker half-opens.
+#
+# Steady-state metric:
+#   - `resilience4j_circuitbreaker_state{name="identityClient"}` -> OPEN within 60s
+#   - End-user p95 latency (gateway-service) stays under 1.5s thanks to fallback
+#   - No 5xx surge at the edge (proves graceful degradation)
+#
+# Blast radius: 200ms +/- 50ms jitter on egress from identity-service pods,
+#               5 minutes, dev only.
+# -----------------------------------------------------------------------------
+apiVersion: chaos-mesh.org/v1alpha1
+kind: NetworkChaos
+metadata:
+  name: network-delay-identity
+  namespace: circleguard-dev
+  labels:
+    app.kubernetes.io/part-of: circleguard
+    app.kubernetes.io/component: chaos
+    experiment: network-delay-identity
+spec:
+  action: delay
+  mode: all
+  duration: "5m"
+  selector:
+    namespaces:
+      - circleguard-dev
+    labelSelectors:
+      app: identity-service
+  delay:
+    latency: "200ms"
+    correlation: "50"
+    jitter: "50ms"
+  direction: to
+  # Apply delay on traffic FROM identity-service TO everything else in the ns.
+  target:
+    mode: all
+    selector:
+      namespaces:
+        - circleguard-dev

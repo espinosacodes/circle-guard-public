@@ -1,0 +1,43 @@
+# -----------------------------------------------------------------------------
+# Network-partition chaos: Kafka brokers <-> consumer services
+#
+# Hypothesis:
+#   Splitting consumers (auth, promotion, notification) from Kafka brokers
+#   for 2 minutes triggers the consumer-side reconnect loop. After the
+#   partition heals, consumer-group lag drains to 0 within 30 s and no
+#   messages are lost.
+#
+# Steady-state metric:
+#   - `kafka_consumergroup_lag` returns to 0 within 30 s of partition end.
+#   - `messages_in_per_topic_total` resumes its baseline rate.
+#   - Zero entries in the consumer dead-letter logger.
+#
+# Blast radius: bidirectional partition between every consumer pod and
+#               every Kafka broker pod, 2 minutes, dev only.
+# -----------------------------------------------------------------------------
+apiVersion: chaos-mesh.org/v1alpha1
+kind: NetworkChaos
+metadata:
+  name: dns-fail-kafka
+  namespace: circleguard-dev
+  labels:
+    app.kubernetes.io/part-of: circleguard
+    app.kubernetes.io/component: chaos
+    experiment: dns-fail-kafka
+spec:
+  action: partition
+  mode: all
+  duration: "2m"
+  direction: both
+  selector:
+    namespaces:
+      - circleguard-dev
+    labelSelectors:
+      app: kafka
+  target:
+    mode: all
+    selector:
+      namespaces:
+        - circleguard-dev
+      expressionSelectors:
+        - { key: kafka-consumer, operator: In, values: ["true"] }

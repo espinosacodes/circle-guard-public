@@ -1,0 +1,39 @@
+# -----------------------------------------------------------------------------
+# CPU-stress chaos: dashboard-service
+#
+# Hypothesis:
+#   Burning ~80 % CPU across 4 workers per dashboard-service pod pushes
+#   container CPU utilisation past the HPA threshold (50 %). HPA scales
+#   the Deployment from N to ceil(N*1.6) replicas within ~60s and traffic
+#   p95 stays under SLO (800 ms).
+#
+# Steady-state metric:
+#   - `kube_horizontalpodautoscaler_status_current_replicas{name="dashboard-service"}`
+#     increases within 60s of injection.
+#   - `http_server_requests_seconds_p95{service="dashboard-service"}` < 800ms.
+#
+# Blast radius: 4 stress workers @ 80% CPU on every dashboard pod, 10 min,
+#               dev only. HPA must be configured on the target Deployment
+#               beforehand (see k8s/dev/services.yml).
+# -----------------------------------------------------------------------------
+apiVersion: chaos-mesh.org/v1alpha1
+kind: StressChaos
+metadata:
+  name: cpu-stress-dashboard
+  namespace: circleguard-dev
+  labels:
+    app.kubernetes.io/part-of: circleguard
+    app.kubernetes.io/component: chaos
+    experiment: cpu-stress-dashboard
+spec:
+  mode: all
+  duration: "10m"
+  selector:
+    namespaces:
+      - circleguard-dev
+    labelSelectors:
+      app: dashboard-service
+  stressors:
+    cpu:
+      workers: 4
+      load: 80

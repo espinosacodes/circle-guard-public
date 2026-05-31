@@ -1,0 +1,119 @@
+# -----------------------------------------------------------------------------
+# Full resilience suite — run before each release-candidate promotion.
+#
+# This Workflow runs the five experiments sequentially with a 5-minute cool
+# down between, so signals do not bleed into each other. Total wall-clock
+# budget: ~1h45m. The pipeline expects success on each step before promoting
+# the candidate to stage.
+#
+# Run:
+#   kubectl apply -f workflows/full-resilience-suite.yaml
+#   kubectl get workflow -n circleguard-dev
+#   kubectl get workflownode -n circleguard-dev
+#
+# Abort:
+#   kubectl delete workflow full-resilience-suite -n circleguard-dev
+# -----------------------------------------------------------------------------
+apiVersion: chaos-mesh.org/v1alpha1
+kind: Workflow
+metadata:
+  name: full-resilience-suite
+  namespace: circleguard-dev
+  labels:
+    app.kubernetes.io/part-of: circleguard
+    app.kubernetes.io/component: chaos
+spec:
+  entry: suite-sequence
+  templates:
+    # ---- root sequence ------------------------------------------------------
+    - name: suite-sequence
+      templateType: Serial
+      deadline: 6000s    # 100 min hard ceiling
+      children:
+        - exp-pod-kill-promotion
+        - cooldown
+        - exp-network-delay-identity
+        - cooldown
+        - exp-cpu-stress-dashboard
+        - cooldown
+        - exp-http-abort-notification
+        - cooldown
+        - exp-dns-fail-kafka
+
+    # ---- 5-minute pause between experiments ---------------------------------
+    - name: cooldown
+      templateType: Suspend
+      deadline: 5m
+
+    # ---- experiment leaves --------------------------------------------------
+    - name: exp-pod-kill-promotion
+      templateType: PodChaos
+      deadline: 60m
+      podChaos:
+        action: pod-kill
+        mode: one
+        scheduler: { cron: "@every 10m" }
+        selector:
+          namespaces: [circleguard-dev]
+          labelSelectors: { app: promotion-service }
+
+    - name: exp-network-delay-identity
+      templateType: NetworkChaos
+      deadline: 5m
+      networkChaos:
+        action: delay
+        mode: all
+        direction: to
+        selector:
+          namespaces: [circleguard-dev]
+          labelSelectors: { app: identity-service }
+        delay:
+          latency: "200ms"
+          correlation: "50"
+          jitter: "50ms"
+        target:
+          mode: all
+          selector:
+            namespaces: [circleguard-dev]
+
+    - name: exp-cpu-stress-dashboard
+      templateType: StressChaos
+      deadline: 10m
+      stressChaos:
+        mode: all
+        selector:
+          namespaces: [circleguard-dev]
+          labelSelectors: { app: dashboard-service }
+        stressors:
+          cpu: { workers: 4, load: 80 }
+
+    - name: exp-http-abort-notification
+      templateType: HTTPChaos
+      deadline: 5m
+      httpChaos:
+        mode: all
+        selector:
+          namespaces: [circleguard-dev]
+          labelSelectors: { app: notification-service }
+        target: Response
+        port: 8080
+        abort: true
+        request_headers:
+          chaos-mesh-sample-rate: "30"
+
+    - name: exp-dns-fail-kafka
+      templateType: NetworkChaos
+      deadline: 2m
+      networkChaos:
+        action: partition
+        mode: all
+        direction: both
+        selector:
+          namespaces: [circleguard-dev]
+          labelSelectors: { app: kafka }
+        target:
+          mode: all
+          selector:
+            namespaces: [circleguard-dev]
+            expressionSelectors:
+              - { key: kafka-consumer, operator: In, values: ["true"] }

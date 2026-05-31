@@ -1,0 +1,85 @@
+# -----------------------------------------------------------------------------
+# Scale dev GKE node pool to 0 every night at 22:00 UTC.
+#
+# Saves roughly 9h * 30 nights ≈ 270 h of compute per month per pool. With
+# 2 e2-standard-2 spot nodes the saving lands at ~$10/mo per dev cluster.
+#
+# Identity:
+#   * The Pod runs as KSA `finops-cluster-resizer` in `circleguard-finops`.
+#   * The KSA is annotated with `iam.gke.io/gcp-service-account=...` and
+#     bound via Workload Identity to a GSA carrying:
+#         roles/container.clusterAdmin
+#     scoped to the dev cluster ONLY (not the project).
+#
+# To bootstrap the KSA + GSA pair (one-time):
+#   gcloud iam service-accounts create finops-cluster-resizer \
+#     --project=circleguard-final-92308
+#   gcloud projects add-iam-policy-binding circleguard-final-92308 \
+#     --member="serviceAccount:finops-cluster-resizer@circleguard-final-92308.iam.gserviceaccount.com" \
+#     --role="roles/container.clusterAdmin" \
+#     --condition='expression=resource.name.endsWith("clusters/circleguard-dev-gke"),title=dev_only'
+#   gcloud iam service-accounts add-iam-policy-binding \
+#     finops-cluster-resizer@circleguard-final-92308.iam.gserviceaccount.com \
+#     --role="roles/iam.workloadIdentityUser" \
+#     --member="serviceAccount:circleguard-final-92308.svc.id.goog[circleguard-finops/finops-cluster-resizer]"
+# -----------------------------------------------------------------------------
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: circleguard-finops
+  labels:
+    app.kubernetes.io/part-of: circleguard
+    app.kubernetes.io/component: finops
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: finops-cluster-resizer
+  namespace: circleguard-finops
+  annotations:
+    iam.gke.io/gcp-service-account: finops-cluster-resizer@circleguard-final-92308.iam.gserviceaccount.com
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: gke-scale-down-dev
+  namespace: circleguard-finops
+  labels:
+    app.kubernetes.io/part-of: circleguard
+    app.kubernetes.io/component: finops
+spec:
+  schedule: "0 22 * * *"          # 22:00 UTC daily
+  timeZone: "Etc/UTC"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      ttlSecondsAfterFinished: 86400
+      template:
+        spec:
+          serviceAccountName: finops-cluster-resizer
+          restartPolicy: OnFailure
+          containers:
+            - name: gcloud
+              image: gcr.io/google.com/cloudsdktool/cloud-sdk:slim
+              env:
+                - { name: GCP_PROJECT, value: "circleguard-final-92308" }
+                - { name: GKE_CLUSTER, value: "circleguard-dev-gke" }
+                - { name: GKE_REGION,  value: "us-central1" }
+                - { name: NODE_POOL,   value: "default-pool" }
+              command: ["/bin/bash", "-euo", "pipefail", "-c"]
+              args:
+                - |
+                  echo "[finops] Scaling ${NODE_POOL} on ${GKE_CLUSTER} to 0 nodes"
+                  gcloud container clusters resize "${GKE_CLUSTER}" \
+                    --node-pool "${NODE_POOL}" \
+                    --num-nodes 0 \
+                    --region "${GKE_REGION}" \
+                    --project "${GCP_PROJECT}" \
+                    --quiet
+                  echo "[finops] Done."
+              resources:
+                requests: { cpu: 50m, memory: 64Mi }
+                limits:   { cpu: 200m, memory: 256Mi }
