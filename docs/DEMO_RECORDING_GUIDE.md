@@ -142,29 +142,29 @@ These go into the final report as embedded images. **Capture them once, name the
 
 | File name | Where to capture | Why it matters |
 |---|---|---|
-| `screenshots/01-kanban-board.png` | https://gitlab.com/espinosacodes/circle-guard-final/-/boards/11343311 | Proves Req 1 — agile board with real cards |
-| `screenshots/02-sprint1-burndown.png` | https://gitlab.com/espinosacodes/circle-guard-final/-/milestones/1 | Proves Req 1 — sprint executed |
-| `screenshots/03-gitlab-pipeline-green.png` | https://gitlab.com/espinosacodes/circle-guard-final/-/pipelines (latest green) | Proves Req 4 — CI/CD all stages |
-| `screenshots/04-sonarqube-report.png` | SonarQube → CircleGuard project → Issues tab | Proves Req 4 — SonarQube |
-| `screenshots/05-trivy-report.png` | A pipeline's `security` stage → Trivy artifact | Proves Req 4 + Req 8 — vuln scan |
-| `screenshots/06-zap-report.png` | A pipeline's `zap` stage → HTML artifact | Proves Req 5 + Req 8 — DAST |
-| `screenshots/07-grafana-auth-dashboard.png` | Grafana → Auth Service dashboard | Proves Req 7 — dashboards |
-| `screenshots/08-grafana-gateway-dashboard.png` | Grafana → Gateway Service dashboard | Proves Req 7 |
-| `screenshots/09-jaeger-trace-cross-service.png` | Jaeger → a trace spanning 3+ services | Proves Req 7 — distributed tracing |
-| `screenshots/10-alertmanager-firing.png` | Alertmanager UI with at least one firing alert | Proves Req 7 — alerts wired |
-| `screenshots/11-kiali-mesh-topology.png` | Kiali graph view of `circleguard-dev` namespace | Proves Bonus 2 — service mesh |
-| `screenshots/12-istio-canary-50-50.png` | Kiali workload graph during 50/50 canary | Proves Bonus 2 — traffic shifting |
-| `screenshots/13-chaos-mesh-workflow.png` | Chaos dashboard, workflow page mid-run | Proves Bonus 3 |
-| `screenshots/14-chaos-cb-opens.png` | Grafana CB panel showing OPEN state during chaos | Proves Bonus 3 + Req 3 interplay |
-| `screenshots/15-gcp-billing.png` | GCP Billing console showing project cost | Proves Bonus 4 |
-| `screenshots/16-looker-cost-dashboard.png` | Looker Studio cost dashboard | Proves Bonus 4 |
-| `screenshots/17-gke-clusters.png` | GCP Console → GKE → clusters list (showing dev cluster RUNNING) | Proves Req 2 — Terraform applied |
-| `screenshots/18-tf-state-bucket.png` | GCP Console → Cloud Storage → `circleguard-final-92308-tfstate` versioning ON | Proves Req 2 — remote state |
-| `screenshots/19-terraform-plan-zero-drift.png` | Terminal after `terraform plan` showing 0 to change | Proves Req 2 — idempotent |
-| `screenshots/20-protected-branches.png` | GitLab Settings → Repository → Protected branches | Proves CG-019 + Req 1 |
-| `screenshots/21-feature-toggle-flip.png` | curl response before+after toggling `graphql-endpoint-enabled` | Proves Req 3 — configuration pattern |
-| `screenshots/22-circuit-breaker-test-passing.png` | Terminal showing `./gradlew :services:circleguard-auth-service:test` green | Proves Req 3 + Req 5 |
-| `screenshots/23-rubric-coverage.png` | docs/PROJECT_COMPLETION.md §2.1 table rendered | The professor's reading-order anchor |
+| `screenshots/final/01-kanban-board.png` | https://gitlab.com/espinosacodes/circle-guard-final/-/boards/11343311 | Proves Req 1 — agile board with real cards |
+| `screenshots/final/02-sprint1-burndown.png` | https://gitlab.com/espinosacodes/circle-guard-final/-/milestones/1 | Proves Req 1 — sprint executed |
+| `screenshots/final/03-gitlab-pipeline-green.png` | https://gitlab.com/espinosacodes/circle-guard-final/-/pipelines (latest green) | Proves Req 4 — CI/CD all stages |
+| `screenshots/final/04-sonarqube-report.png` | SonarQube → CircleGuard project → Issues tab | Proves Req 4 — SonarQube |
+| `screenshots/final/05-trivy-report.png` | A pipeline's `security` stage → Trivy artifact | Proves Req 4 + Req 8 — vuln scan |
+| `screenshots/final/06-zap-report.png` | A pipeline's `zap` stage → HTML artifact | Proves Req 5 + Req 8 — DAST |
+| `screenshots/final/07-grafana-auth-dashboard.png` | Grafana → Auth Service dashboard | Proves Req 7 — dashboards |
+| `screenshots/final/08-grafana-gateway-dashboard.png` | Grafana → Gateway Service dashboard | Proves Req 7 |
+| `screenshots/final/09-jaeger-trace-cross-service.png` | Jaeger → a trace spanning 3+ services | Proves Req 7 — distributed tracing |
+| `screenshots/final/10-alertmanager-firing.png` | Alertmanager UI with at least one firing alert | Proves Req 7 — alerts wired |
+| `screenshots/final/11-kiali-mesh-topology.png` | Kiali graph view of `circleguard-dev` namespace | Proves Bonus 2 — service mesh |
+| `screenshots/final/12-istio-canary-50-50.png` | Kiali workload graph during 50/50 canary | Proves Bonus 2 — traffic shifting |
+| `screenshots/final/13-chaos-mesh-workflow.png` | Chaos dashboard, workflow page mid-run | Proves Bonus 3 |
+| `screenshots/final/14-chaos-cb-opens.png` | Grafana CB panel showing OPEN state during chaos | Proves Bonus 3 + Req 3 interplay |
+| `screenshots/final/15-gcp-billing.png` | GCP Billing console showing project cost | Proves Bonus 4 |
+| `screenshots/final/16-looker-cost-dashboard.png` | Looker Studio cost dashboard | Proves Bonus 4 |
+| `screenshots/final/17-gke-clusters.png` | GCP Console → GKE → clusters list (showing dev cluster RUNNING) | Proves Req 2 — Terraform applied |
+| `screenshots/final/18-tf-state-bucket.png` | GCP Console → Cloud Storage → `circleguard-final-92308-tfstate` versioning ON | Proves Req 2 — remote state |
+| `screenshots/final/19-terraform-plan-zero-drift.png` | Terminal after `terraform plan` showing 0 to change | Proves Req 2 — idempotent |
+| `screenshots/final/20-protected-branches.png` | GitLab Settings → Repository → Protected branches | Proves CG-019 + Req 1 |
+| `screenshots/final/21-feature-toggle-flip.png` | curl response before+after toggling `graphql-endpoint-enabled` | Proves Req 3 — configuration pattern |
+| `screenshots/final/22-circuit-breaker-test-passing.png` | Terminal showing `./gradlew :services:circleguard-auth-service:test` green | Proves Req 3 + Req 5 |
+| `screenshots/final/23-rubric-coverage.png` | docs/PROJECT_COMPLETION.md §2.1 table rendered | The professor's reading-order anchor |
 
 **Naming**: keep the `NN-short-name.png` pattern so the embedded order in the final report is stable.
 
