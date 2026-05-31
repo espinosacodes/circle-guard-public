@@ -34,6 +34,7 @@ stages:
   - deploy-dev
   - deploy-stage
   - e2e
+  - perf
   - zap
   - deploy-prod
   - release
@@ -111,6 +112,7 @@ include:
   - local: '.gitlab/ci/package.yml'
   - local: '.gitlab/ci/deploy.yml'
   - local: '.gitlab/ci/e2e.yml'
+  - local: '.gitlab/ci/perf.yml'
   - local: '.gitlab/ci/zap.yml'
   - local: '.gitlab/ci/release.yml'
   - local: '.gitlab/ci/notify.yml'

@@ -1,0 +1,62 @@
+# =====================================================================
+# CircleGuard - OWASP ZAP rule severity overrides
+# =====================================================================
+# Format (tab-separated, comments start with '#'):
+#   <ruleId>  <threshold>  <newRisk>  <comment>
+#
+# threshold : OFF / LOW / MEDIUM / HIGH    (alert noise filter)
+# newRisk   : INFO / LOW / MEDIUM / HIGH   (severity override)
+#
+# Rules are escalated to HIGH so they fail the baseline scan via the
+# `-l HIGH` flag in `.gitlab/ci/zap.yml` (anything strictly below HIGH
+# only shows as a warning in the report). Rule IDs map to:
+#   https://www.zaproxy.org/docs/alerts/
+#
+# OWASP Top 10 (2021) coverage:
+#   A01 Broken Access Control      ->  10024, 10025
+#   A02 Cryptographic Failures     ->  10038, 10054, 10063
+#   A03 Injection                  ->  40018, 40019, 40020, 40026, 90017
+#   A04 Insecure Design            ->  10202 (CSRF absence)
+#   A05 Security Misconfiguration  ->  10037, 10049, 10095, 90033
+#   A06 Vulnerable Components      ->  (covered by Trivy, not ZAP)
+#   A07 Identification/Auth Fail   ->  10105
+#   A08 Software & Data Integrity  ->  10202
+#   A09 Logging Failures           ->  (out of ZAP scope)
+#   A10 SSRF                       ->  40029
+# =====================================================================
+
+# --- A03: Injection (highest priority) ---
+40018	HIGH	HIGH	SQL Injection — fail build
+40019	HIGH	HIGH	SQL Injection (MySQL) — fail build
+40020	HIGH	HIGH	SQL Injection (Hypersonic) — fail build
+40026	HIGH	HIGH	Cross Site Scripting (DOM) — fail build
+90017	HIGH	HIGH	XSLT Injection — fail build
+40012	HIGH	HIGH	XSS (Reflected) — fail build
+40014	HIGH	HIGH	XSS (Persistent) — fail build
+40016	HIGH	HIGH	XSS (Persistent - Prime) — fail build
+40017	HIGH	HIGH	XSS (Persistent - Spider) — fail build
+
+# --- A04: Insecure Design (CSRF) ---
+10202	HIGH	HIGH	Absence of Anti-CSRF Tokens — fail build
+
+# --- A02 + A05: TLS + headers ---
+10038	HIGH	HIGH	CSP header not set — fail build
+10054	HIGH	HIGH	Cookie without Secure flag — fail build
+10063	HIGH	HIGH	Permissions-Policy header not set
+10037	MEDIUM	HIGH	Server leaks information via "X-Powered-By"
+10095	HIGH	HIGH	Backup File Disclosure — fail build
+90033	HIGH	HIGH	Loosely Scoped Cookie — fail build
+
+# --- A01: Access control / admin exposure ---
+10024	HIGH	HIGH	Sensitive info in URL (admin paths) — fail build
+10025	HIGH	HIGH	Information Disclosure - Sensitive Info in HTTP Referrer
+
+# --- A07: Weak auth ---
+10105	HIGH	HIGH	Weak authentication method — fail build
+
+# --- A10: SSRF ---
+40029	HIGH	HIGH	Server-Side Request Forgery — fail build
+
+# --- Validated false positives — turn off ---
+10027	OFF	INFO	"Suspicious comments" — Java javadoc is not a leak
+10049	OFF	INFO	"Cacheable content" — admin static assets are deliberately cached

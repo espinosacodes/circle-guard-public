@@ -1,0 +1,134 @@
+# =====================================================================
+# CircleGuard - SonarQube Helm values
+# =====================================================================
+# Helm chart: sonarqube/sonarqube  (>= 10.4.x)
+# Profile:    Community edition (no licence required)
+# Database:   External PostgreSQL (Cloud SQL dev instance, shared)
+# Storage:    5 Gi PVC for Elasticsearch index (NOT the source of truth)
+# Ingress:    sonarqube.circleguard.local (TLS via cert-manager if avail.)
+#
+# Apply with:
+#   helm upgrade --install sonarqube sonarqube/sonarqube \
+#       -n sonarqube --create-namespace \
+#       -f infra/k8s/sonarqube/values.yaml
+# =====================================================================
+
+# ---------------------------------------------------------------------
+# Edition + image. Community Edition is the only free-tier option that
+# supports external Postgres in production mode.
+# ---------------------------------------------------------------------
+edition: community
+image:
+  repository: sonarqube
+  tag: 10.5.1-community
+  pullPolicy: IfNotPresent
+
+# ---------------------------------------------------------------------
+# Disable embedded H2 (default) and point at the dev Cloud SQL Postgres.
+# Connection string + credentials come from the `sonarqube-db` Secret
+# created via db-secret-example.yaml. Embedded chart Postgres also off.
+# ---------------------------------------------------------------------
+postgresql:
+  enabled: false           # don't install the bundled Postgres subchart
+
+jdbcOverwrite:
+  enable: true
+  jdbcUrl: "jdbc:postgresql://cloudsql-dev.circleguard.svc.cluster.local:5432/sonarqube"
+  jdbcUsername: ""         # leave blank — sourced from Secret below
+  jdbcPassword: ""         # leave blank — sourced from Secret below
+  jdbcSecretName: sonarqube-db
+  jdbcSecretPasswordKey: SONAR_JDBC_PASSWORD
+  jdbcSecretUsernameKey: SONAR_JDBC_USERNAME
+
+# ---------------------------------------------------------------------
+# Admin password — read from a Secret rather than the chart default
+# (`admin`). Create the Secret via db-secret-example.yaml (same file
+# holds both DB + admin creds in two separate keys for convenience).
+# ---------------------------------------------------------------------
+account:
+  adminPasswordSecretName: sonarqube-admin
+  # adminPassword key inside the Secret = `password`
+
+# ---------------------------------------------------------------------
+# JVM sizing. 2 Gi heap is the documented minimum that lets Sonar boot
+# without bouncing under steady CI load. Increase to 3 Gi if you start
+# analysing repos > 1 M LOC.
+# ---------------------------------------------------------------------
+jvmOpts: "-Xms1g -Xmx2g"
+jvmCEOpts: "-Xms1g -Xmx2g"
+
+resources:
+  requests:
+    cpu: "500m"
+    memory: "2.5Gi"
+  limits:
+    cpu: "2"
+    memory: "4Gi"
+
+# ---------------------------------------------------------------------
+# Persistent volume — only Elasticsearch lives here. Source of truth is
+# Postgres, so loss of this PVC just triggers a re-index on next boot.
+# ---------------------------------------------------------------------
+persistence:
+  enabled: true
+  storageClass: "standard-rwo"
+  size: 5Gi
+  accessModes:
+    - ReadWriteOnce
+
+# ---------------------------------------------------------------------
+# Service + Ingress. Use cert-manager letsencrypt-staging if available;
+# fall back to plain HTTP. The ingress class assumes `nginx` is
+# installed cluster-wide (matches the existing CircleGuard pattern).
+# ---------------------------------------------------------------------
+service:
+  type: ClusterIP
+  externalPort: 9000
+  internalPort: 9000
+
+ingress:
+  enabled: true
+  ingressClassName: nginx
+  hosts:
+    - name: sonarqube.circleguard.local
+      path: /
+  annotations:
+    # Comment out the next two lines if no cert-manager ClusterIssuer
+    # is installed — the chart then serves plain HTTP.
+    cert-manager.io/cluster-issuer: letsencrypt-staging
+    nginx.ingress.kubernetes.io/proxy-body-size: "64m"
+  tls:
+    - hosts:
+        - sonarqube.circleguard.local
+      secretName: sonarqube-tls
+
+# ---------------------------------------------------------------------
+# Elasticsearch sidecar — required by Sonar; matches default kernel
+# tuning the chart applies via initContainer.
+# ---------------------------------------------------------------------
+elasticsearch:
+  configureNode: true
+  bootstrapChecks: true
+
+# ---------------------------------------------------------------------
+# Monitoring — expose Prometheus metrics on /api/monitoring/metrics.
+# Scraped by the platform Prometheus (see infra/k8s/observability).
+# ---------------------------------------------------------------------
+monitoringPasscode: ""               # use the Secret below instead
+monitoringPasscodeSecretName: sonarqube-monitoring
+monitoringPasscodeSecretKey: passcode
+
+prometheusExporter:
+  enabled: true
+
+# ---------------------------------------------------------------------
+# Security context — non-root, drop all caps (matches PSS `restricted`).
+# ---------------------------------------------------------------------
+podSecurityContext:
+  fsGroup: 0
+containerSecurityContext:
+  runAsNonRoot: true
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL

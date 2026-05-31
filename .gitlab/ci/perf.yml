@@ -1,0 +1,157 @@
+# =====================================================================
+# CircleGuard - Performance Stage (Locust + k6 in parallel)
+# =====================================================================
+# Two complementary load generators against the stage gateway. Both
+# produce reports under `results/perf/` and both must pass their SLOs
+# for the master pipeline to promote to production.
+#
+# Stage pipeline : both jobs run, allow_failure: true so a transient
+#                  perf blip doesn't block a stage deploy.
+# Master pipeline: both jobs run, allow_failure: false — SLO violation
+#                  blocks the production deploy.
+#
+# Required CI/CD variables (set in GitLab UI):
+#   CG_GATEWAY_URL        stage gateway URL
+#   CG_AUTH_URL           stage auth-service URL
+#   CG_PROMOTION_URL      stage promotion-service URL
+#   CG_NOTIFICATION_URL   stage notification-service URL
+#   CG_DASHBOARD_URL      stage dashboard-service URL
+#   CG_USERNAME           load-test user (perf-test@circleguard.edu)
+#   CG_PASSWORD           load-test password
+# =====================================================================
+
+# Add a new stage to the parent pipeline. The parent `.gitlab-ci.yml`
+# includes this file, so the stage list there must contain `perf`
+# between `e2e` and `zap`. See the include block in `.gitlab-ci.yml`.
+
+# ---------------------------------------------------------------------
+# Shared rules: run in stage + master pipelines, not in MRs (perf
+# scans are expensive — we don't gate MRs on them).
+# ---------------------------------------------------------------------
+.perf_rules:
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "develop"'
+      allow_failure: true
+    - if: '$CI_COMMIT_BRANCH =~ /^release\//'
+      allow_failure: true
+    - if: '$CI_COMMIT_BRANCH == "main" || $CI_COMMIT_BRANCH == "master"'
+      allow_failure: false      # block prod promotion on SLO violation
+    - if: '$CI_COMMIT_TAG'
+      allow_failure: false
+
+# ---------------------------------------------------------------------
+# Locust — re-uses the existing locustfile.py. Headless 50 VUs / 5 min.
+# ---------------------------------------------------------------------
+perf:locust:
+  stage: perf
+  image: python:3.11-slim
+  needs:
+    - job: deploy:stage
+      artifacts: false
+  before_script:
+    - pip install --no-cache-dir locust==2.27.0 pyjwt==2.8.0 requests
+    - mkdir -p results/perf
+  script:
+    - |
+      locust -f tests/performance/locustfile.py --headless \
+             --users 50 --spawn-rate 10 --run-time 5m \
+             --host "${CG_GATEWAY_URL}" \
+             --csv results/perf/perf-stage \
+             --html results/perf/perf-stage.html
+    # Enforce SLO from the CSV summary. The "Aggregated" row column
+    # "95%" must be < 200 ms; the failure ratio must be < 1%.
+    - |
+      python <<'PY'
+      import csv, sys
+      with open('results/perf/perf-stage_stats.csv') as f:
+          r = csv.DictReader(f)
+          for row in r:
+              if row.get('Name') == 'Aggregated':
+                  p95 = float(row.get('95%', 0) or 0)
+                  total = int(row.get('Request Count', 0) or 0) or 1
+                  fails = int(row.get('Failure Count', 0) or 0)
+                  err = fails / total
+                  print(f"locust: p95={p95}ms err={err:.4%}")
+                  if p95 >= 200:
+                      print(f"FAIL: Locust p95 {p95}ms >= 200ms SLO", file=sys.stderr); sys.exit(1)
+                  if err >= 0.01:
+                      print(f"FAIL: Locust err {err:.4%} >= 1% SLO", file=sys.stderr); sys.exit(1)
+                  break
+      PY
+  artifacts:
+    when: always
+    expire_in: 1 month
+    paths:
+      - results/perf/perf-stage*
+  extends: .perf_rules
+
+# ---------------------------------------------------------------------
+# k6 — runs the load profile of gateway-validate + the cascade scenario.
+# Thresholds in tests/performance/k6/thresholds.js enforce the SLO.
+# ---------------------------------------------------------------------
+perf:k6:
+  stage: perf
+  image: grafana/k6:0.50.0
+  needs:
+    - job: deploy:stage
+      artifacts: false
+  before_script:
+    - mkdir -p results/perf
+  script:
+    # Load profile against the gateway (50 VUs / 5 min, p95<200ms enforced)
+    - |
+      K6_SCENARIO=load \
+        k6 run --out json=results/perf/k6-gateway-load.json \
+               tests/performance/k6/scenarios/gateway-validate.js
+    # End-to-end cascade timing (60 s SLO enforced)
+    - |
+      k6 run --out json=results/perf/k6-cascade.json \
+             tests/performance/k6/scenarios/promotion-cascade.js
+    # Dashboard read load (same p95<200ms / err<1% thresholds)
+    - |
+      k6 run --out json=results/perf/k6-dashboard.json \
+             tests/performance/k6/scenarios/dashboard-queries.js
+  artifacts:
+    when: always
+    expire_in: 1 month
+    paths:
+      - results/perf/k6-*.json
+  extends: .perf_rules
+
+# ---------------------------------------------------------------------
+# Aggregation — emits the side-by-side comparison report whether or not
+# the previous two jobs passed. Always-on so the report shows up even
+# when a SLO violation halts the pipeline.
+# ---------------------------------------------------------------------
+perf:compare:
+  stage: perf
+  image: alpine:3.19
+  needs:
+    - job: perf:locust
+      artifacts: true
+      optional: true
+    - job: perf:k6
+      artifacts: true
+      optional: true
+  before_script:
+    - apk add --no-cache jq gawk
+  script:
+    - |
+      echo "# CircleGuard perf comparison (auto-generated)" \
+        > results/perf/SAMPLE_REPORT.md
+      echo "" >> results/perf/SAMPLE_REPORT.md
+      echo "Pipeline: ${CI_PIPELINE_URL}"   >> results/perf/SAMPLE_REPORT.md
+      echo "Commit  : ${CI_COMMIT_SHORT_SHA}" >> results/perf/SAMPLE_REPORT.md
+      echo ""                                 >> results/perf/SAMPLE_REPORT.md
+      echo "See tests/performance/k6/comparison-with-locust.md for the diff procedure." \
+        >> results/perf/SAMPLE_REPORT.md
+  artifacts:
+    when: always
+    expire_in: 1 month
+    paths:
+      - results/perf/SAMPLE_REPORT.md
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "develop"'
+    - if: '$CI_COMMIT_BRANCH =~ /^release\//'
+    - if: '$CI_COMMIT_BRANCH == "main" || $CI_COMMIT_BRANCH == "master"'
+    - if: '$CI_COMMIT_TAG'

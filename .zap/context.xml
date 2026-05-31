@@ -1,0 +1,95 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!--
+=====================================================================
+CircleGuard - OWASP ZAP context file
+=====================================================================
+Consumed by `.gitlab/ci/zap.yml` as `zap-baseline.py -t .zap/context.xml`.
+
+Two placeholders are resolved at scan time from CI variables:
+  ${ZAP_TARGET_URL}  - the stage gateway base URL
+  ${ZAP_AUTH_TOKEN}  - a short-lived bearer token (see context.scope)
+
+The scope deliberately excludes /actuator/health* and /v3/api-docs;
+those are revisited in .zap/baseline.conf at the rule level.
+=====================================================================
+-->
+<configuration>
+    <context>
+        <name>circleguard-gateway</name>
+        <desc>CircleGuard stage gateway baseline context (auth = bearer)</desc>
+
+        <inscope>true</inscope>
+
+        <!--
+            URLs in scope (the spider will not follow links outside these
+            regexes). ${ZAP_TARGET_URL} is substituted via envsubst before
+            zap-baseline.py loads the file.
+        -->
+        <incregexes>${ZAP_TARGET_URL}.*</incregexes>
+
+        <!-- Noise: liveness probes, swagger UI, generated API docs -->
+        <excregexes>${ZAP_TARGET_URL}/actuator/health.*</excregexes>
+        <excregexes>${ZAP_TARGET_URL}/actuator/info</excregexes>
+        <excregexes>${ZAP_TARGET_URL}/actuator/prometheus</excregexes>
+        <excregexes>${ZAP_TARGET_URL}/swagger-ui.*</excregexes>
+        <excregexes>${ZAP_TARGET_URL}/v3/api-docs.*</excregexes>
+
+        <tech>
+            <include>Db</include>
+            <include>Db.PostgreSQL</include>
+            <include>Language.Java</include>
+            <include>OS.Linux</include>
+            <include>SCM.Git</include>
+            <include>WS</include>
+        </tech>
+
+        <urlparser>
+            <class>org.zaproxy.zap.model.StandardParameterParser</class>
+            <config>{"kvps":"&amp;","kvs":"=","struct":[]}</config>
+        </urlparser>
+        <postparser>
+            <class>org.zaproxy.zap.model.StandardParameterParser</class>
+            <config>{"kvps":"&amp;","kvs":"=","struct":[]}</config>
+        </postparser>
+
+        <!--
+            Authentication block: bearer token injected via the
+            Authorization header on every request. ZAP's "manualAuthentication"
+            method is the simplest way to do this — we don't have a login form
+            to walk through, the gateway just accepts a JWT.
+        -->
+        <authentication>
+            <type>0</type>
+            <strategy>EACH_RESP</strategy>
+            <pollurl/>
+            <pollfreq>60</pollfreq>
+            <pollunits>REQUESTS</pollunits>
+            <loggedin>HTTP/.* 2\d\d</loggedin>
+            <loggedout>HTTP/.* (401|403)</loggedout>
+        </authentication>
+
+        <!--
+            The "default" user carries the bearer token. CI substitutes
+            ${ZAP_AUTH_TOKEN} via envsubst before invoking zap-baseline.py.
+        -->
+        <users>
+            <user>1;true;Y2lyY2xlZ3VhcmQtemFw;0;Bearer ${ZAP_AUTH_TOKEN}</user>
+        </users>
+
+        <forceduser>1</forceduser>
+
+        <sessionManagement>
+            <type>0</type>
+        </sessionManagement>
+
+        <authorization>
+            <type>0</type>
+            <basic>
+                <header/>
+                <body/>
+                <logic>AND</logic>
+                <code>-1</code>
+            </basic>
+        </authorization>
+    </context>
+</configuration>

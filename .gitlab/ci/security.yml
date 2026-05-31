@@ -98,3 +98,73 @@ security:image:
     - if: '$CI_COMMIT_BRANCH =~ /^release\//'
     - if: '$CI_COMMIT_BRANCH == "main" || $CI_COMMIT_BRANCH == "master"'
     - if: '$CI_COMMIT_TAG'
+
+# =====================================================================
+# CG-018: SBOM Generation (syft -> CycloneDX)
+# =====================================================================
+# One SBOM per pushed container image. Runs after `package:image`, in
+# parallel per service (matrix). The CycloneDX JSON is uploaded both as
+# a regular artifact AND as `cyclonedx` report so GitLab's Dependency
+# List / Vulnerability tab consume it natively.
+#
+# Retention: 90 days as a GitLab artifact; long-term storage handled
+# out-of-band (GCS bucket) — see docs/SBOM.md.
+# =====================================================================
+sbom:
+  stage: security
+  image:
+    name: anchore/syft:v1.8.0
+    entrypoint: [""]
+  needs:
+    - job: package:image
+      optional: true
+  parallel:
+    matrix:
+      - SERVICE:
+          - auth-service
+          - dashboard-service
+          - file-service
+          - form-service
+          - gateway-service
+          - identity-service
+          - notification-service
+          - promotion-service
+  variables:
+    IMAGE: "${AR_REPO}/${SERVICE}:${IMAGE_TAG}"
+    SBOM_DIR: "sbom"
+  before_script:
+    # Auth so syft can pull from Artifact Registry (mirrors security:image)
+    - mkdir -p ~/.docker
+    - echo "${GCP_SA_KEY}" > /tmp/sa.json
+    - |
+      cat > ~/.docker/config.json <<JSON
+      { "credHelpers": { "${GCP_AR_REGION}-docker.pkg.dev": "gcloud" } }
+      JSON
+    - mkdir -p "${SBOM_DIR}"
+  script:
+    # Generate CycloneDX JSON (GitLab native format)
+    - |
+      syft "${IMAGE}" \
+        -o cyclonedx-json="${SBOM_DIR}/${SERVICE}-${IMAGE_TAG}.cdx.json"
+    # Also produce a human-readable SPDX table (used in incident response)
+    - |
+      syft "${IMAGE}" \
+        -o spdx-json="${SBOM_DIR}/${SERVICE}-${IMAGE_TAG}.spdx.json" \
+        -o table="${SBOM_DIR}/${SERVICE}-${IMAGE_TAG}.txt"
+    # Quick sanity grep so a missing dependency tree fails the job
+    - |
+      grep -q '"bomFormat":"CycloneDX"' "${SBOM_DIR}/${SERVICE}-${IMAGE_TAG}.cdx.json"
+  artifacts:
+    when: always
+    expire_in: 90 days
+    paths:
+      - sbom/*.json
+      - sbom/*.txt
+    reports:
+      # GitLab consumes the CycloneDX file into the Dependency List page
+      cyclonedx: "sbom/${SERVICE}-${IMAGE_TAG}.cdx.json"
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "develop"'
+    - if: '$CI_COMMIT_BRANCH =~ /^release\//'
+    - if: '$CI_COMMIT_BRANCH == "main" || $CI_COMMIT_BRANCH == "master"'
+    - if: '$CI_COMMIT_TAG'
