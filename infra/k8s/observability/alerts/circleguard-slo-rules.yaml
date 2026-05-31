@@ -1,0 +1,221 @@
+# =============================================================================
+# CircleGuard SLO + platform alerts
+# Apply with: kubectl apply -f circleguard-slo-rules.yaml
+#
+# Selected by the Prometheus instance because the namespace carries the label
+# `monitoring=enabled` and the kube-prometheus-stack ruleSelector is wide-open.
+#
+# SLO definitions (initial — tune after 30 days of data):
+#   gateway availability    -> 99.5%  (error budget = 0.5% / 30d)
+#   gateway latency p95     -> < 500ms
+#   auth     error rate     -> < 1%
+#
+# Burn-rate alert thresholds follow the Google SRE workbook recipe:
+#   short window 5m + long window 1h  -> "fast burn"  (page)
+#   short window 30m + long window 6h -> "slow burn"  (ticket)
+# =============================================================================
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: circleguard-slo
+  namespace: observability
+  labels:
+    monitoring: enabled
+    release: kps        # match kube-prometheus-stack ruleSelector defaults
+    prometheus: kps
+    role: alert-rules
+spec:
+  groups:
+    # -------------------------------------------------------------------------
+    # Recording rules — precompute expensive queries that alerts and
+    # dashboards reuse. Names follow the level:metric:operation convention.
+    # -------------------------------------------------------------------------
+    - name: circleguard.slo.recording
+      interval: 30s
+      rules:
+        - record: slo:gateway:latency_p95_5m
+          expr: |
+            histogram_quantile(
+              0.95,
+              sum by (le) (
+                rate(http_server_requests_seconds_bucket{
+                  app="circleguard-gateway-service"
+                }[5m])
+              )
+            )
+
+        - record: slo:gateway:availability_5m
+          expr: |
+            1 - (
+              sum(rate(http_server_requests_seconds_count{
+                app="circleguard-gateway-service", status=~"5.."}[5m]))
+              /
+              sum(rate(http_server_requests_seconds_count{
+                app="circleguard-gateway-service"}[5m]))
+            )
+
+        - record: slo:auth:error_rate_5m
+          expr: |
+            sum(rate(http_server_requests_seconds_count{
+              app="circleguard-auth-service", status=~"5.."}[5m]))
+            /
+            sum(rate(http_server_requests_seconds_count{
+              app="circleguard-auth-service"}[5m]))
+
+        - record: slo:auth:error_rate_1h
+          expr: |
+            sum(rate(http_server_requests_seconds_count{
+              app="circleguard-auth-service", status=~"5.."}[1h]))
+            /
+            sum(rate(http_server_requests_seconds_count{
+              app="circleguard-auth-service"}[1h]))
+
+        - record: slo:auth:error_rate_6h
+          expr: |
+            sum(rate(http_server_requests_seconds_count{
+              app="circleguard-auth-service", status=~"5.."}[6h]))
+            /
+            sum(rate(http_server_requests_seconds_count{
+              app="circleguard-auth-service"}[6h]))
+
+    # -------------------------------------------------------------------------
+    # Burn-rate alerts (SRE workbook)
+    # -------------------------------------------------------------------------
+    - name: circleguard.slo.burn
+      rules:
+        - alert: GatewayLatencyBurnRateFast
+          # Burning >14.4x error budget over 1h AND 5m windows = page now.
+          expr: |
+            (slo:gateway:latency_p95_5m > 0.5)
+            and
+            (avg_over_time(slo:gateway:latency_p95_5m[1h]) > 0.5)
+          for: 2m
+          labels:
+            severity: critical
+            service: gateway
+            slo: gateway-latency
+          annotations:
+            summary: "Gateway p95 latency burning SLO (fast)"
+            description: "p95 = {{ $value }}s for >2m on both 5m and 1h windows."
+            runbook_url: "https://github.com/circleguard/circle-guard-public/blob/main/docs/runbooks/gateway-slo-burn.md"
+            dashboard_url: "https://grafana.circleguard.example.com/d/cg-gateway"
+
+        - alert: GatewayLatencyBurnRateSlow
+          expr: |
+            (avg_over_time(slo:gateway:latency_p95_5m[30m]) > 0.5)
+            and
+            (avg_over_time(slo:gateway:latency_p95_5m[6h])  > 0.5)
+          for: 15m
+          labels:
+            severity: warning
+            service: gateway
+            slo: gateway-latency
+          annotations:
+            summary: "Gateway p95 latency burning SLO (slow)"
+            description: "p95 over 30m AND 6h is above the 500ms threshold."
+            runbook_url: "https://github.com/circleguard/circle-guard-public/blob/main/docs/runbooks/gateway-slo-burn.md"
+
+        - alert: AuthErrorBudgetBurnFast
+          # 14.4x = 5% over 1h breaches the 30d budget within 2 days.
+          expr: |
+            (slo:auth:error_rate_5m  > (14.4 * 0.01))
+            and
+            (slo:auth:error_rate_1h > (14.4 * 0.01))
+          for: 2m
+          labels:
+            severity: critical
+            service: auth
+            slo: auth-availability
+          annotations:
+            summary: "Auth service is burning the error budget fast"
+            description: "5xx rate = {{ $value | humanizePercentage }} over both 5m and 1h."
+            runbook_url: "https://github.com/circleguard/circle-guard-public/blob/main/docs/runbooks/gateway-slo-burn.md"
+
+        - alert: AuthErrorBudgetBurnSlow
+          expr: |
+            (slo:auth:error_rate_1h > (6 * 0.01))
+            and
+            (slo:auth:error_rate_6h > (6 * 0.01))
+          for: 15m
+          labels:
+            severity: warning
+            service: auth
+            slo: auth-availability
+          annotations:
+            summary: "Auth service slow error-budget burn"
+            description: "5xx rate above 6% on both 1h and 6h windows."
+            runbook_url: "https://github.com/circleguard/circle-guard-public/blob/main/docs/runbooks/gateway-slo-burn.md"
+
+    # -------------------------------------------------------------------------
+    # Platform / pod-level alerts
+    # -------------------------------------------------------------------------
+    - name: circleguard.platform
+      rules:
+        - alert: PodCrashLooping
+          expr: |
+            increase(kube_pod_container_status_restarts_total{
+              namespace=~"circleguard-.*"}[15m]) > 3
+          for: 5m
+          labels:
+            severity: critical
+            service: "{{ $labels.pod }}"
+          annotations:
+            summary: "Pod {{ $labels.namespace }}/{{ $labels.pod }} is crash-looping"
+            description: "Container {{ $labels.container }} has restarted >3 times in 15m."
+            runbook_url: "https://github.com/circleguard/circle-guard-public/blob/main/docs/runbooks/pod-crashloop.md"
+
+        - alert: PodHighMemory
+          expr: |
+            (
+              container_memory_working_set_bytes{
+                namespace=~"circleguard-.*", container!="", container!="POD"}
+              /
+              container_spec_memory_limit_bytes{
+                namespace=~"circleguard-.*", container!="", container!="POD"}
+            ) > 0.9
+          for: 10m
+          labels:
+            severity: warning
+            service: "{{ $labels.pod }}"
+          annotations:
+            summary: "Pod {{ $labels.namespace }}/{{ $labels.pod }} memory >90% of limit"
+            description: "Working set has been above 90% of the limit for 10m — risk of OOMKill."
+            runbook_url: "https://github.com/circleguard/circle-guard-public/blob/main/docs/runbooks/pod-crashloop.md"
+
+        - alert: KafkaConsumerLag
+          # kafka-exporter emits kafka_consumergroup_lag per (group, topic, partition).
+          expr: |
+            sum by (consumergroup, topic) (
+              kafka_consumergroup_lag{consumergroup=~"circleguard-.*"}
+            ) > 10000
+          for: 10m
+          labels:
+            severity: warning
+            service: "{{ $labels.consumergroup }}"
+          annotations:
+            summary: "Kafka consumer group {{ $labels.consumergroup }} lag > 10k"
+            description: "Topic {{ $labels.topic }} has accumulated >10000 unprocessed records for 10m."
+            runbook_url: "https://github.com/circleguard/circle-guard-public/blob/main/docs/runbooks/kafka-consumer-lag.md"
+
+        - alert: ServiceDown
+          expr: up{job=~"circleguard-.*"} == 0
+          for: 3m
+          labels:
+            severity: critical
+            service: "{{ $labels.job }}"
+          annotations:
+            summary: "Service {{ $labels.job }} is DOWN"
+            description: "Prometheus has not been able to scrape {{ $labels.instance }} for 3m."
+            runbook_url: "https://github.com/circleguard/circle-guard-public/blob/main/docs/runbooks/pod-crashloop.md"
+
+        - alert: CircuitBreakerOpen
+          expr: |
+            resilience4j_circuitbreaker_state{state="open"} == 1
+          for: 1m
+          labels:
+            severity: warning
+            service: "{{ $labels.application }}"
+          annotations:
+            summary: "Circuit breaker {{ $labels.name }} OPEN on {{ $labels.application }}"
+            description: "Downstream dependency is failing — traffic is being shed."
+            runbook_url: "https://github.com/circleguard/circle-guard-public/blob/main/docs/runbooks/gateway-slo-burn.md"

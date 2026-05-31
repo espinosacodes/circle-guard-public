@@ -1,0 +1,171 @@
+# =============================================================================
+# Loki + Promtail (loki-stack chart) — log aggregation for CircleGuard
+# Chart: grafana/loki-stack
+#
+# Why loki-stack and not the new "loki" + "promtail" split charts?
+#   - Single chart bundles a sane, pre-wired Loki + Promtail combo.
+#   - For our scale (8 services on GKE dev/stage/prod) the all-in-one
+#     "single-binary" Loki mode is the cheapest option (no S3/GCS bucket
+#     required, no separate distributor/ingester/querier pods).
+#   - When ingest sustains >50 GB/day we should migrate to grafana/loki with
+#     GCS backend and the SimpleScalable deployment mode.
+# =============================================================================
+#
+# Install:
+#   helm upgrade --install loki grafana/loki-stack \
+#     -n observability -f values.yaml
+# =============================================================================
+
+loki:
+  enabled: true
+  # ---------------------------------------------------------------------------
+  # Single-binary mode — all components run in one pod. Cheapest option.
+  # ---------------------------------------------------------------------------
+  isDefault: false   # we register the datasource ourselves in Grafana
+
+  persistence:
+    enabled: true
+    storageClassName: standard-rwo
+    accessModes: ["ReadWriteOnce"]
+    size: 20Gi
+
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits:   { cpu: 1,    memory: 1Gi }
+
+  config:
+    auth_enabled: false
+    server:
+      http_listen_port: 3100
+      grpc_listen_port: 9095
+
+    common:
+      path_prefix: /data/loki
+      replication_factor: 1
+      ring:
+        kvstore:
+          store: inmemory
+
+    schema_config:
+      configs:
+        - from: "2024-01-01"
+          store: tsdb
+          object_store: filesystem
+          schema: v13
+          index:
+            prefix: index_
+            period: 24h
+
+    storage_config:
+      tsdb_shipper:
+        active_index_directory: /data/loki/tsdb-index
+        cache_location: /data/loki/tsdb-cache
+      filesystem:
+        directory: /data/loki/chunks
+
+    # -------------------------------------------------------------------------
+    # Retention — Loki enforces it via the compactor.
+    # 7d window = 168h. Bump to 30d for prod and resize the PVC accordingly.
+    # -------------------------------------------------------------------------
+    limits_config:
+      retention_period: 168h         # 7d
+      reject_old_samples: true
+      reject_old_samples_max_age: 168h
+      ingestion_rate_mb: 8
+      ingestion_burst_size_mb: 16
+      max_query_series: 5000
+
+    compactor:
+      working_directory: /data/loki/compactor
+      retention_enabled: true
+      retention_delete_delay: 2h
+      delete_request_store: filesystem
+
+    table_manager:
+      retention_deletes_enabled: true
+      retention_period: 168h
+
+# =============================================================================
+# Promtail — DaemonSet that ships every pod's log file to Loki.
+# =============================================================================
+promtail:
+  enabled: true
+  config:
+    clients:
+      - url: http://loki:3100/loki/api/v1/push
+
+    # Enrich each log line with full Kubernetes metadata so we can filter in
+    # Grafana Explore by namespace / pod / container / app label.
+    snippets:
+      pipelineStages:
+        - cri: {}
+        - labels:
+            stream:
+      extraRelabelConfigs:
+        - action: replace
+          source_labels: [__meta_kubernetes_pod_label_app_kubernetes_io_name]
+          target_label: app
+        - action: replace
+          source_labels: [__meta_kubernetes_pod_label_app_kubernetes_io_component]
+          target_label: component
+        - action: replace
+          source_labels: [__meta_kubernetes_pod_node_name]
+          target_label: node
+
+  resources:
+    requests: { cpu: 50m,  memory: 64Mi }
+    limits:   { cpu: 200m, memory: 128Mi }
+
+  # Promtail needs hostPath access to /var/log/pods. The restricted PSA
+  # profile blocks hostPath by default; we keep these mounts because the
+  # chart's default DaemonSet declares them explicitly and we run Promtail
+  # with `runAsUser: 0` in a system-reserved exception. Document this in
+  # docs/OBSERVABILITY.md "Trade-offs" section.
+
+# =============================================================================
+# Grafana — disabled here because kube-prometheus-stack already ships it.
+# We auto-provision the Loki datasource via the sidecar ConfigMap below.
+# =============================================================================
+grafana:
+  enabled: false
+
+# Auto-provision Loki as a Grafana datasource (picked up by the
+# kube-prometheus-stack Grafana sidecar via label grafana_datasource=1).
+extraObjects:
+  - apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: loki-grafana-datasource
+      namespace: observability
+      labels:
+        grafana_datasource: "1"
+    data:
+      loki-datasource.yaml: |
+        apiVersion: 1
+        datasources:
+          - name: Loki
+            type: loki
+            access: proxy
+            uid: loki
+            url: http://loki:3100
+            isDefault: false
+            jsonData:
+              maxLines: 1000
+              # Correlate logs to traces by extracting the trace_id field
+              # injected by Spring Boot's OpenTelemetry MDC.
+              derivedFields:
+                - name: TraceID
+                  matcherRegex: "trace_id=(\\w+)"
+                  url: "$${__value.raw}"
+                  datasourceUid: jaeger
+
+jaeger:
+  enabled: false
+prometheus:
+  enabled: false
+fluent-bit:
+  enabled: false
+filebeat:
+  enabled: false
+logstash:
+  enabled: false

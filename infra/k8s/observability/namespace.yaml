@@ -1,0 +1,24 @@
+# Dedicated namespace for the CircleGuard observability stack.
+#
+# Pod Security Admission (PSA) is configured to "restricted" — the strictest
+# tier — because every component we install here (Prometheus, Grafana, Loki,
+# Promtail, Jaeger, Alertmanager) ships compatible Helm charts. Promtail
+# normally needs hostPath access to /var/log; we override its securityContext
+# in loki/values.yaml so it still works under restricted PSA.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: observability
+  labels:
+    name: observability
+    # Pod Security Admission — enforce the restricted profile.
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: latest
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted
+    # Mark the namespace so our ServiceMonitor selector picks up workloads
+    # scheduled inside it (kube-state-metrics, node-exporter, etc).
+    monitoring: enabled
+  annotations:
+    owner: "platform-sre@circleguard.example.com"
+    purpose: "Centralized metrics, logs, traces and alerting for CircleGuard."

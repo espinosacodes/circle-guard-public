@@ -1,0 +1,131 @@
+# =============================================================================
+# Jaeger values for CircleGuard distributed tracing
+# Chart: jaegertracing/jaeger
+#
+# Two deployment shapes are encoded below — keep one block uncommented per env:
+#   * dev   -> allInOne (single pod, in-memory, fastest to spin up)
+#   * stage/prod -> production (collector + query + agent, Elasticsearch backend)
+# =============================================================================
+#
+# Install:
+#   helm upgrade --install jaeger jaegertracing/jaeger \
+#     -n observability -f values.yaml
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# dev / local / CI — All-in-one is sufficient. Memory storage = lossy on
+# restart but zero infra cost. 10% sampling keeps the pod tiny.
+# -----------------------------------------------------------------------------
+allInOne:
+  enabled: true
+  image:
+    tag: "1.60"
+  args:
+    - "--memory.max-traces=50000"
+    - "--query.base-path=/jaeger"
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits:   { cpu: 500m, memory: 1Gi }
+  extraEnv:
+    - name: COLLECTOR_OTLP_ENABLED
+      value: "true"
+
+storage:
+  # Memory backend — switch to "elasticsearch" or "cassandra" in prod.
+  # If you have GCP Elasticsearch (Elastic Cloud on GCP) flip these:
+  #
+  # type: elasticsearch
+  # elasticsearch:
+  #   host: elasticsearch-master.elastic.svc.cluster.local
+  #   port: 9200
+  #   user: elastic
+  #   usePassword: true
+  #   existingSecret: jaeger-es-credentials
+  #   existingSecretKey: password
+  type: memory
+
+# -----------------------------------------------------------------------------
+# Production layout — leave commented; flip on per env via --set or overlay.
+# -----------------------------------------------------------------------------
+provisionDataStore:
+  cassandra: false
+  elasticsearch: false
+  kafka: false
+
+# Disable the production microservices when running all-in-one.
+agent:      { enabled: false }
+collector:  { enabled: false }
+query:      { enabled: false }
+ingester:   { enabled: false }
+
+# When you flip to production tracing, uncomment the block below and set
+# allInOne.enabled=false.
+#
+# allInOne:  { enabled: false }
+# collector:
+#   enabled: true
+#   service:
+#     otlp:
+#       grpc: { name: otlp-grpc, port: 4317 }
+#       http: { name: otlp-http, port: 4318 }
+#   resources:
+#     requests: { cpu: 200m, memory: 512Mi }
+#     limits:   { cpu: 1,    memory: 1Gi }
+# query:
+#   enabled: true
+#   replicaCount: 2
+#   resources:
+#     requests: { cpu: 100m, memory: 256Mi }
+#     limits:   { cpu: 500m, memory: 512Mi }
+# agent:
+#   enabled: true   # DaemonSet, only needed for non-OTLP clients
+
+# =============================================================================
+# OTLP receivers — both gRPC (4317) and HTTP (4318) so Java services can
+# choose. Spring Boot 3 + micrometer-tracing-bridge-otel will emit on gRPC
+# by default; the mobile/web clients use HTTP.
+# =============================================================================
+extraConfigmapMounts: []
+collector_OTLP_enabled: true   # documented switch — used by extraEnv above
+
+# =============================================================================
+# Sampling — head-based, 10%. Override per service via OTEL_TRACES_SAMPLER_ARG.
+# Increase to 100% during a load test, decrease to 1% in prod once stable.
+# =============================================================================
+samplingConfig: |-
+  {
+    "service_strategies": [
+      { "service": "circleguard-gateway-service",
+        "type": "probabilistic",
+        "param": 0.1 }
+    ],
+    "default_strategy": {
+      "type": "probabilistic",
+      "param": 0.1
+    }
+  }
+
+# Register Jaeger as a Grafana datasource via the sidecar pattern.
+extraObjects:
+  - apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: jaeger-grafana-datasource
+      namespace: observability
+      labels:
+        grafana_datasource: "1"
+    data:
+      jaeger-datasource.yaml: |
+        apiVersion: 1
+        datasources:
+          - name: Jaeger
+            type: jaeger
+            access: proxy
+            uid: jaeger
+            url: http://jaeger-query:16686
+            isDefault: false
+            jsonData:
+              tracesToLogs:
+                datasourceUid: loki
+                tags: ['app', 'pod', 'namespace']
+                mapTagNamesEnabled: true

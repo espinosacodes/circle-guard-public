@@ -1,0 +1,172 @@
+# =============================================================================
+# kube-prometheus-stack values for CircleGuard
+# Chart: prometheus-community/kube-prometheus-stack
+# Tested with chart version >= 58.x (Prometheus 2.54, Grafana 11.x)
+# =============================================================================
+#
+# Install:
+#   helm upgrade --install kps prometheus-community/kube-prometheus-stack \
+#     -n observability -f values.yaml
+#
+# Required secret (created by install.sh before this release):
+#   grafana-admin-credentials  keys: admin-user, admin-password
+# =============================================================================
+
+fullnameOverride: kps
+
+# -----------------------------------------------------------------------------
+# Default exporters: keep ON. They give us the baseline cluster health view
+# without writing a single line of code.
+# -----------------------------------------------------------------------------
+kubelet:
+  enabled: true
+  serviceMonitor:
+    cAdvisor: true
+    probes: true
+nodeExporter:
+  enabled: true
+kube-state-metrics:
+  enabled: true
+prometheus-node-exporter:
+  resources:
+    requests: { cpu: 50m,  memory: 64Mi }
+    limits:   { cpu: 200m, memory: 128Mi }
+
+# Kube-controller-manager / scheduler / proxy / etcd endpoints are not
+# scrapable from inside GKE (control-plane is managed) — turn them off to
+# avoid "Down" alerts that we cannot remediate.
+kubeControllerManager: { enabled: false }
+kubeScheduler:         { enabled: false }
+kubeProxy:             { enabled: false }
+kubeEtcd:              { enabled: false }
+
+# =============================================================================
+# Prometheus
+# =============================================================================
+prometheus:
+  prometheusSpec:
+    # Retention — dev keeps 7d for cost; prod keeps 30d for postmortems.
+    # Override per environment via `--set prometheus.prometheusSpec.retention=30d`.
+    retention: 7d            # dev / stage
+    # retention: 30d         # prod (override on master env)
+    retentionSize: "18GB"    # keep ~10% headroom under the 20Gi PVC
+
+    # ServiceMonitor / PodMonitor discovery — pick up any object labelled
+    # monitoring=enabled. Setting these to false here would limit selection
+    # to objects in our own release; we want app teams to register their own.
+    serviceMonitorSelectorNilUsesHelmValues: false
+    podMonitorSelectorNilUsesHelmValues: false
+    ruleSelectorNilUsesHelmValues: false
+    probeSelectorNilUsesHelmValues: false
+    serviceMonitorSelector:
+      matchLabels:
+        monitoring: enabled
+    podMonitorSelector:
+      matchLabels:
+        monitoring: enabled
+
+    # Persistent storage — 20Gi standard-rwo on GKE.
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: standard-rwo
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 20Gi
+
+    # Sized for an e2-standard-2 worker (2 vCPU / 8 GiB).
+    resources:
+      requests: { cpu: 250m, memory: 1Gi }
+      limits:   { cpu: 1,    memory: 2Gi }
+
+    # External labels make remote-write / federation safe across clusters.
+    externalLabels:
+      cluster: circleguard
+      environment: ${ENVIRONMENT}   # rendered by install.sh via envsubst
+
+    # Limit blast radius if a target explodes its cardinality.
+    enforcedSampleLimit: 50000
+    enforcedLabelLimit: 30
+
+# =============================================================================
+# Alertmanager — we override most of this from alertmanager/values.yaml at
+# install time. Keep the basics here so the stack is functional out of the box.
+# =============================================================================
+alertmanager:
+  alertmanagerSpec:
+    retention: 120h
+    storage:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: standard-rwo
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 2Gi
+    resources:
+      requests: { cpu: 50m,  memory: 128Mi }
+      limits:   { cpu: 200m, memory: 256Mi }
+
+# =============================================================================
+# Grafana
+# =============================================================================
+grafana:
+  # Pull admin credentials from a pre-created Secret — never hardcode here.
+  admin:
+    existingSecret: grafana-admin-credentials
+    userKey: admin-user
+    passwordKey: admin-password
+
+  persistence:
+    enabled: true
+    type: pvc
+    storageClassName: standard-rwo
+    size: 5Gi
+    accessModes: ["ReadWriteOnce"]
+
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits:   { cpu: 500m, memory: 512Mi }
+
+  # Sidecar auto-discovers ConfigMaps with these labels and loads them as
+  # dashboards / datasources. This is how grafana-dashboards/configmap-loader.yaml
+  # gets picked up automatically.
+  sidecar:
+    dashboards:
+      enabled: true
+      label: grafana_dashboard
+      labelValue: "1"
+      searchNamespace: ALL
+      provider:
+        foldersFromFilesStructure: true
+    datasources:
+      enabled: true
+      label: grafana_datasource
+      labelValue: "1"
+      searchNamespace: ALL
+
+  # Default datasources — Loki and Jaeger are added by their own charts via
+  # sidecar ConfigMaps; Prometheus is provisioned by kube-prometheus-stack.
+  defaultDashboardsEnabled: true
+
+  service:
+    type: ClusterIP
+    port: 80
+
+  # Ingress is environment-specific; enable in prod overlay only.
+  ingress:
+    enabled: false
+    # When enabling, set hosts: ["grafana.circleguard.example.com"] and TLS.
+
+  grafana.ini:
+    server:
+      root_url: "%(protocol)s://%(domain)s/"
+    security:
+      cookie_secure: true
+      strict_transport_security: true
+    auth.anonymous:
+      enabled: false
+    analytics:
+      reporting_enabled: false
+      check_for_updates: false

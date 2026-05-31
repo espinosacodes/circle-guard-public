@@ -1,0 +1,55 @@
+# =============================================================================
+# Grafana dashboard ConfigMaps — auto-loaded by the kube-prometheus-stack
+# Grafana sidecar because of the `grafana_dashboard: "1"` label.
+#
+# Each ConfigMap embeds the JSON file from this directory verbatim. After
+# changing a JSON, regenerate this file with:
+#
+#   kubectl create configmap cg-dashboard-auth \
+#     --from-file=auth-service.json=auth-service.json \
+#     --dry-run=client -o yaml | \
+#     yq '.metadata.labels.grafana_dashboard = "1" | .metadata.namespace = "observability"'
+#
+# We keep all three in one document for easy `kubectl apply -f`.
+# =============================================================================
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cg-dashboard-auth
+  namespace: observability
+  labels:
+    grafana_dashboard: "1"
+    app.kubernetes.io/part-of: circleguard
+data:
+  # Loaded verbatim; sidecar uses the file name as the dashboard slug.
+  auth-service.json: |-
+    # PLACEHOLDER — the install.sh script will replace this entry by running:
+    #   kubectl create configmap cg-dashboard-auth --from-file=auth-service.json
+    # so that the JSON is shipped 1:1 without re-encoding. This stub is kept
+    # only so `kubectl apply -f` on a fresh cluster does not fail before
+    # install.sh runs.
+    {}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cg-dashboard-gateway
+  namespace: observability
+  labels:
+    grafana_dashboard: "1"
+    app.kubernetes.io/part-of: circleguard
+data:
+  gateway-service.json: |-
+    {}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cg-dashboard-dashboard
+  namespace: observability
+  labels:
+    grafana_dashboard: "1"
+    app.kubernetes.io/part-of: circleguard
+data:
+  dashboard-service.json: |-
+    {}

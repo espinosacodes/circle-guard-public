@@ -1,0 +1,98 @@
+# =============================================================================
+# Alertmanager configuration overrides (consumed by kube-prometheus-stack).
+# Apply with:
+#   helm upgrade kps prometheus-community/kube-prometheus-stack \
+#     -n observability \
+#     -f ../kube-prometheus-stack/values.yaml \
+#     -f values.yaml
+#
+# Required Secret (created by install.sh):
+#   alertmanager-slack-webhook   key: url   value: https://hooks.slack.com/...
+# =============================================================================
+
+alertmanager:
+  config:
+    global:
+      resolve_timeout: 5m
+      # Slack webhook is injected via env var so we never commit the URL.
+      # The kube-prometheus-stack secretSyncer mounts the secret as
+      # /etc/alertmanager/secrets/alertmanager-slack-webhook/url
+      slack_api_url_file: /etc/alertmanager/secrets/alertmanager-slack-webhook/url
+
+    # -------------------------------------------------------------------------
+    # Routing tree
+    #   sev=critical -> #circleguard-ops      (Sev-1)
+    #   sev=warning  -> #circleguard-warnings (Sev-2)
+    #   sev=info     -> dropped (use Grafana, not paging)
+    # -------------------------------------------------------------------------
+    route:
+      group_by: ["alertname", "cluster", "service"]
+      group_wait: 30s
+      group_interval: 5m
+      repeat_interval: 4h
+      receiver: default-warnings
+      routes:
+        - matchers: ['severity = "critical"']
+          receiver: slack-ops
+          continue: true
+        - matchers: ['severity = "warning"']
+          receiver: slack-warnings
+        - matchers: ['severity = "info"']
+          receiver: "null"
+
+    # -------------------------------------------------------------------------
+    # Inhibitions — silence noise when a parent alert is already firing.
+    #   * ServiceDown inhibits any HighLatency / HighErrorRate for the same svc
+    #   * NodeDown    inhibits any PodCrashLooping on that node
+    #   * ClusterDown inhibits everything else
+    # -------------------------------------------------------------------------
+    inhibit_rules:
+      - source_matchers: ['alertname = "ServiceDown"']
+        target_matchers: ['alertname =~ "High.*"']
+        equal: ["service", "namespace"]
+      - source_matchers: ['alertname = "NodeNotReady"']
+        target_matchers: ['alertname = "PodCrashLooping"']
+        equal: ["node"]
+      - source_matchers: ['severity = "critical"']
+        target_matchers: ['severity = "warning"']
+        equal: ["alertname", "service", "namespace"]
+
+    receivers:
+      - name: "null"
+
+      - name: default-warnings
+        slack_configs:
+          - channel: "#circleguard-warnings"
+            send_resolved: true
+            title: '{{ template "slack.default.title" . }}'
+            text:  '{{ template "slack.default.text"  . }}'
+
+      - name: slack-ops
+        slack_configs:
+          - channel: "#circleguard-ops"
+            send_resolved: true
+            title: '[SEV1] {{ .CommonLabels.alertname }} — {{ .CommonLabels.service }}'
+            text: |-
+              *Severity*: {{ .CommonLabels.severity }}
+              *Environment*: {{ .CommonLabels.environment }}
+              *Summary*: {{ .CommonAnnotations.summary }}
+              *Runbook*: {{ .CommonAnnotations.runbook_url }}
+              *Dashboard*: {{ .CommonAnnotations.dashboard_url }}
+
+      - name: slack-warnings
+        slack_configs:
+          - channel: "#circleguard-warnings"
+            send_resolved: true
+            title: '[SEV2] {{ .CommonLabels.alertname }} — {{ .CommonLabels.service }}'
+            text: |-
+              *Severity*: {{ .CommonLabels.severity }}
+              *Summary*: {{ .CommonAnnotations.summary }}
+              *Runbook*: {{ .CommonAnnotations.runbook_url }}
+
+    templates:
+      - /etc/alertmanager/config/*.tmpl
+
+  # Mount the Slack webhook Secret so slack_api_url_file resolves.
+  alertmanagerSpec:
+    secrets:
+      - alertmanager-slack-webhook

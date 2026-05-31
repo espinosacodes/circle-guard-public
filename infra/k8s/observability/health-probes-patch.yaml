@@ -1,0 +1,72 @@
+# =============================================================================
+# Liveness / Readiness / Startup probe patch for any CircleGuard service.
+#
+# Spring Boot 3 exposes split health groups when this property is on:
+#     management.endpoint.health.probes.enabled=true
+# which gives us:
+#     /actuator/health/liveness   -> "is the JVM alive?"
+#     /actuator/health/readiness  -> "is the app ready to serve traffic?"
+#
+# Apply via Kustomize:
+#   patches:
+#     - path: ../../observability/health-probes-patch.yaml
+#       target:
+#         kind: Deployment
+#         labelSelector: "app.kubernetes.io/part-of=circleguard"
+#
+# Or copy the `containers[].livenessProbe` / `readinessProbe` / `startupProbe`
+# blocks below into each service's Deployment.
+# =============================================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: PLACEHOLDER-overridden-by-kustomize
+spec:
+  template:
+    spec:
+      containers:
+        - name: app
+          ports:
+            - name: http
+              containerPort: 8080
+
+          # ----------------------------------------------------------------
+          # Startup probe — gives the JVM up to 60s to warm up before the
+          # liveness/readiness clocks start ticking. Without this, slow
+          # cold starts will be killed by livenessProbe.
+          # ----------------------------------------------------------------
+          startupProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: http
+            failureThreshold: 30      # 30 * 2s = 60s budget
+            periodSeconds: 2
+
+          # ----------------------------------------------------------------
+          # Liveness — restart the pod if /liveness fails 3 times in a row.
+          # Should NOT depend on databases or downstream services (otherwise
+          # a transient outage will restart everything).
+          # ----------------------------------------------------------------
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: http
+            initialDelaySeconds: 0   # gated by startupProbe
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
+
+          # ----------------------------------------------------------------
+          # Readiness — pull the pod out of the Service load balancer when
+          # /readiness fails. SHOULD include DB + Kafka + downstream checks.
+          # Spring Boot adds them automatically when the auto-config is on.
+          # ----------------------------------------------------------------
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: http
+            initialDelaySeconds: 0
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 3
+            successThreshold: 1
