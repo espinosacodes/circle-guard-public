@@ -26,9 +26,8 @@ allInOne:
   resources:
     requests: { cpu: 100m, memory: 256Mi }
     limits:   { cpu: 500m, memory: 1Gi }
-  extraEnv:
-    - name: COLLECTOR_OTLP_ENABLED
-      value: "true"
+  # NOTE: COLLECTOR_OTLP_ENABLED is auto-set by the chart when allInOne.enabled=true,
+  # so do NOT add it via extraEnv (would cause a "duplicate entries" patch error).
 
 storage:
   # Memory backend — switch to "elasticsearch" or "cassandra" in prod.

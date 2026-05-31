@@ -23,6 +23,13 @@ loki:
   # ---------------------------------------------------------------------------
   isDefault: false   # we register the datasource ourselves in Grafana
 
+  # Pin a Loki 2.9 image because the loki-stack chart still defaults to
+  # Loki 2.6.1, which doesn't know our config keys (delete_request_store,
+  # store: tsdb, schema: v13 are all Loki 2.8+).
+  image:
+    repository: grafana/loki
+    tag: "2.9.10"
+
   persistence:
     enabled: true
     storageClassName: standard-rwo
