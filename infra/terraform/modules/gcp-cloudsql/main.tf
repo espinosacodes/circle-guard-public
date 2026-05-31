@@ -39,6 +39,10 @@ resource "google_sql_database_instance" "this" {
 
   settings {
     tier              = var.tier
+    # GCP changed the default to ENTERPRISE_PLUS in late 2025, which rejects
+    # cheap shared tiers like db-f1-micro. Pin to ENTERPRISE so the dev tier
+    # stays valid; prod tfvars can override to ENTERPRISE_PLUS if desired.
+    edition           = var.edition
     availability_type = var.availability_type
     disk_size         = var.disk_size_gb
     disk_type         = "PD_SSD"

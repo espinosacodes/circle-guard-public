@@ -77,3 +77,9 @@ variable "deletion_protection" {
   type        = bool
   default     = true
 }
+
+variable "edition" {
+  description = "Cloud SQL edition. ENTERPRISE allows db-f1-micro etc.; ENTERPRISE_PLUS only takes db-perf-optimized-N-* tiers. GCP defaulted to PLUS in late 2025."
+  type        = string
+  default     = "ENTERPRISE"
+}
