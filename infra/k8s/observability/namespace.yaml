@@ -1,23 +1,26 @@
 # Dedicated namespace for the CircleGuard observability stack.
 #
-# Pod Security Admission (PSA) is "baseline" rather than "restricted" because:
-#   - node-exporter (part of kube-prometheus-stack) needs hostNetwork + hostPID
-#     + hostPath access to /proc and /sys to expose node metrics
-#   - Grafana's init-chown-data runs as root with the CHOWN capability
-#   - Promtail mounts /var/log via hostPath to ship pod logs
-# All three are blocked by "restricted". "baseline" still blocks privileged
-# containers and dangerous capabilities, but allows hostPath/hostNetwork —
-# which is the correct tier for a kube-system-adjacent observability stack.
+# Pod Security Admission (PSA) is "privileged" (i.e. no enforcement) because
+# the observability stack needs host-level access that even the "baseline"
+# tier blocks:
+#   - node-exporter: hostNetwork + hostPID + hostPath(/proc,/sys,/) + hostPort 9100
+#   - Promtail: hostPath(/var/log) to scrape pod logs
+#   - Grafana's init-chown-data: runs as root with the CHOWN capability
+# These are legitimate elevated needs for a kube-system-adjacent observability
+# stack and cannot be satisfied by any non-privileged profile.
+#
+# We still set `audit` + `warn` to "baseline" so any *unexpected* privileged
+# workload (e.g. a debug pod someone runs here) shows up in audit logs.
 # Application namespaces (circleguard-*) keep the stricter "restricted"
-# enforcement.
+# enforcement — this relaxation is scoped to `observability` only.
 apiVersion: v1
 kind: Namespace
 metadata:
   name: observability
   labels:
     name: observability
-    # Pod Security Admission — see comment above for the baseline rationale.
-    pod-security.kubernetes.io/enforce: baseline
+    # PSA — see header comment for the privileged rationale.
+    pod-security.kubernetes.io/enforce: privileged
     pod-security.kubernetes.io/enforce-version: latest
     pod-security.kubernetes.io/audit: baseline
     pod-security.kubernetes.io/warn: baseline
