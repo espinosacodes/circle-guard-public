@@ -18,8 +18,12 @@
 default:
   image: eclipse-temurin:21-jdk
   interruptible: true
-  tags:
-    - docker
+  # No `tags:` — let GitLab's shared SaaS runners (saas-linux-small-amd64)
+  # pick up jobs. The original `tags: [docker]` matched a private runner
+  # convention from the Jenkinsfile era; on gitlab.com SaaS that tag isn't
+  # registered, so all jobs got `stuck_pending_no_matching_runners`.
+  # Per-job overrides still work — heavy build jobs can opt into
+  # saas-linux-medium-amd64 with `tags: [saas-linux-medium-amd64]`.
 
 # ---------------------------------------------------------------------
 # Stages run sequentially; jobs within a stage run in parallel.
