@@ -5,6 +5,8 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -45,6 +47,12 @@ class FeatureToggleIT {
         @Autowired
         MockMvc mockMvc;
 
+        // AnalyticsService autowires JdbcTemplate, which is normally provided
+        // by DataSourceAutoConfiguration. We excluded that to keep this slice
+        // light — so mock the bean to satisfy the wiring.
+        @MockBean
+        JdbcTemplate jdbcTemplate;
+
         @Test
         void graphqlEndpointIs404() throws Exception {
             mockMvc.perform(get("/api/v1/dashboard/graphql/ping"))
@@ -83,6 +91,11 @@ class FeatureToggleIT {
 
         @Autowired
         MockMvc mockMvc;
+
+        // Same reason as WhenGraphqlToggleOff — satisfy AnalyticsService's
+        // JdbcTemplate dependency without standing up a real DataSource.
+        @MockBean
+        JdbcTemplate jdbcTemplate;
 
         @Test
         void graphqlEndpointReturnsPayload() throws Exception {
