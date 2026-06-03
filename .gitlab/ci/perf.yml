@@ -92,7 +92,12 @@ perf:locust:
 # ---------------------------------------------------------------------
 perf:k6:
   stage: perf
-  image: grafana/k6:0.50.0
+  image:
+    name: grafana/k6:0.50.0
+    # k6 is the image ENTRYPOINT; GitLab CI runs step_script via /bin/sh,
+    # which the entrypoint rejects with: "unknown command sh for k6".
+    # Clearing entrypoint lets CI invoke /bin/sh -> then k6 as a command.
+    entrypoint: [""]
   needs:
     - job: deploy:stage
       artifacts: false
