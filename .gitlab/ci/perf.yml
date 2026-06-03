@@ -48,6 +48,7 @@ perf:locust:
   needs:
     - job: deploy:stage
       artifacts: false
+      optional: true
   before_script:
     - pip install --no-cache-dir locust==2.27.0 pyjwt==2.8.0 requests
     - mkdir -p results/perf
@@ -95,6 +96,7 @@ perf:k6:
   needs:
     - job: deploy:stage
       artifacts: false
+      optional: true
   before_script:
     - mkdir -p results/perf
   script:
