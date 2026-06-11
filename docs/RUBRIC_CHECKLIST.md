@@ -1,12 +1,40 @@
 # CircleGuard — Rubric Checklist (Live)
 
 **Course:** IngeSoft V Final Project · **Repo:** https://gitlab.com/espinosacodes/circle-guard-final
-**Last updated:** 2026-06-10 (live cluster verified) · **Format:** live presentation + video
+**Last updated:** 2026-06-10 (post OTel + Pact + business gauge + SonarCloud wired) · **Format:** live presentation
 **Live cluster:** GCP project `circleguard-final-cfs-2026`, GKE `circleguard-dev-gke` (us-central1, 4 nodes RUNNING)
 **Multi-cloud:** GCP + OCI (Azure removed from narrative; AKS/ACR Terraform modules disabled)
-**Self-scored cap:** 113 / 120 (93 core + 19 bonus, post OTel + Pact + business gauge)
+**Self-scored:** **112 / 120** (93 core + 19 bonus) · ceiling 114-115/120 once SonarCloud token wired + OCI overnight retry pegue
 
 Legend: ✅ done · 🟡 partial / evidence captured · ⏳ in progress · ❌ not started · 📸 needs screenshot
+
+---
+
+## 🆕 Session update — 2026-06-10 late
+
+**Commits:** `17a127c` (código) + `5150788` (este checklist)
+
+| Tarea | Estado | Impacto |
+|---|---|---|
+| OCI overnight retry loop (PID 55166, 46 intentos restantes, ~12 h) | 🌙 corriendo | Bonus 1: 4 → 5/5 si Oracle libera capacidad |
+| Tarea 1 — `/actuator/prometheus` en 7 servicios | ✅ en código (bloqueado por deploys viejos) | Req 7 listo cuando se redeployen |
+| Tarea 2 — OTel app spans (7 servicios) | ✅ shipped | Req 7 +1 (ya en 10/10) |
+| Tarea 3 — Business gauge `active_circles` | ✅ shipped | Req 7 +1 (ya en 10/10) |
+| Tarea 4 — SonarCloud config wireado | ✅ código listo, **falta token del estudiante** | Req 4 +1-2 cuando el token entre en CI vars |
+| Tarea 5 — Pact contract `form → promotion` | ✅ test verde | Req 5 +1 (ya en 12/15) |
+
+**Acción mínima del estudiante (~5 min):**
+1. https://sonarcloud.io → login con GitLab → importar `espinosacodes/circle-guard-final`
+2. Settings → Generate token → copy
+3. GitLab → Settings → CI/CD → Variables:
+   - `SONAR_TOKEN` = (el token, masked + protected)
+   - `SONAR_HOST_URL` = `https://sonarcloud.io`
+4. Push trivial → pipeline corre Sonar automáticamente → Quality Gate visible
+
+Si se hace: **112 → 113-114 / 120**.
+Si además el retry de OCI pega de noche: **114-115 / 120**.
+
+**Para chequear el retry en la mañana:** `tail -f scripts/oci-retry.log`
 
 ---
 
@@ -241,13 +269,18 @@ Legend: ✅ done · 🟡 partial / evidence captured · ⏳ in progress · ❌ n
    - 20+ pending in `docs/DEMO_RECORDING_GUIDE.md`
 5. **Pre-flight rehearsal:** dry-run the live demo end-to-end at least once
 
-## Current self-score (honest, 2026-06-10 after live cluster verification)
+## Current self-score (honest, 2026-06-10 post-session)
 
-| Section | Possible | Current | Gap |
-|---|---:|---:|---|
-| Core 1-9 | 100 | **90** | -2 obs (actuator + jaeger app spans), -3 tests (no Pact + live runs), -3 video pending, -1 IaC backend still local, -1 CI/CD live SonarQube/Slack pending |
-| Bonuses B1-B4 | 20 | **19** | -1 OCI worker node pool (Oracle Always-Free Ampere capacity blocked at `500 Out of host capacity`) |
-| **Total** | **120** | **109** | — |
+| Section | Possible | Current | Δ esta sesión | Gap |
+|---|---:|---:|---:|---|
+| Core 1-9 | 100 | **93** | +3 | -3 tests (live perf/ZAP/E2E con URLs reales), -3 CI/CD (SonarCloud token + Slack webhook + pipeline-green screenshot), -1 IaC backend aún local |
+| Bonuses B1-B4 | 20 | **19** | 0 | -1 OCI worker node pool (`500 Out of host capacity` — overnight retry corriendo) |
+| **Total** | **120** | **112** | **+3** | — |
+
+**Trayectoria proyectada:**
+- Si entra el token SonarCloud → **113-114** (Req 4 cierra)
+- Si OCI overnight retry pega → **+1 más, ceiling 114-115**
+- Si además se redeployan los servicios para que el OTel y `/actuator/prometheus` queden visibles en Grafana en vivo → todo el 10/10 de Req 7 demostrable
 
 **Bonus 1 breakdown (4/5):**
 - +1 design (`ARCHITECTURE.md` §5, GCP+OCI topology + DR table — Azure removed)
