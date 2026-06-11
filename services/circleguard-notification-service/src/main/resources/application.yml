@@ -41,6 +41,21 @@ management:
   endpoint:
     health:
       show-details: always
+  # Disable the mail health contributor — Spring Boot auto-registers one
+  # because spring-boot-starter-mail is on the classpath, but the test context
+  # has no MailSender bean and the indicator fails with
+  # "Beans must not be empty" before tests even run.
+  health:
+    mail:
+      enabled: false
   metrics:
     tags:
       application: ${spring.application.name}
+  tracing:
+    sampling:
+      probability: ${TRACING_SAMPLE_RATE:1.0}
+    propagation:
+      type: b3,w3c
+  otlp:
+    tracing:
+      endpoint: ${OTLP_TRACES_ENDPOINT:http://jaeger-collector.observability:4318/v1/traces}

@@ -1,8 +1,10 @@
 package com.circleguard.promotion.metrics;
 
 import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -32,6 +34,7 @@ public class BusinessMetricsConfig {
 
     public static final String PROMOTIONS_COUNTER_NAME = "circleguard.promotions.total";
     public static final String PROMOTION_TIMER_NAME = "circleguard.promotion.latency";
+    public static final String ACTIVE_CIRCLES_GAUGE_NAME = "circleguard.active.circles";
 
     @Bean
     public Counter promotionsCounter(MeterRegistry registry) {
@@ -48,5 +51,23 @@ public class BusinessMetricsConfig {
                 .tag("source", "health-center")
                 .publishPercentiles(0.5, 0.95, 0.99)
                 .register(registry);
+    }
+
+    /**
+     * Live count of "active" (Confirmed-status) circles currently under quarantine.
+     * Refreshed by {@link ActiveCirclesTracker} from the promotion service after
+     * each successful promote or expiration.
+     *
+     * <p>Completes the three Micrometer instrument families for Req 7
+     * ("métricas de negocio"): Counter + Timer + Gauge.</p>
+     */
+    @Bean
+    public AtomicInteger activeCirclesHolder(MeterRegistry registry) {
+        AtomicInteger holder = new AtomicInteger(0);
+        Gauge.builder(ACTIVE_CIRCLES_GAUGE_NAME, holder, AtomicInteger::get)
+                .description("Number of Confirmed-status circles currently under quarantine")
+                .tag("scope", "campus")
+                .register(registry);
+        return holder;
     }
 }

@@ -23,6 +23,9 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-configuration-processor")
     annotationProcessor("org.springframework.boot:spring-boot-configuration-processor")
     implementation("io.micrometer:micrometer-registry-prometheus")
+    // --- Req 7: Distributed tracing (OTel -> Jaeger) ---
+    implementation("io.micrometer:micrometer-tracing-bridge-otel")
+    implementation("io.opentelemetry:opentelemetry-exporter-otlp")
 
     testImplementation("org.springframework.boot:spring-boot-starter-test")
 }

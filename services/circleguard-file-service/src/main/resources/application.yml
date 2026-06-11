@@ -23,3 +23,11 @@ management:
   metrics:
     tags:
       application: ${spring.application.name}
+  tracing:
+    sampling:
+      probability: ${TRACING_SAMPLE_RATE:1.0}
+    propagation:
+      type: b3,w3c
+  otlp:
+    tracing:
+      endpoint: ${OTLP_TRACES_ENDPOINT:http://jaeger-collector.observability:4318/v1/traces}

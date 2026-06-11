@@ -15,9 +15,14 @@ dependencies {
     implementation("org.springframework.kafka:spring-kafka")
     implementation("org.springframework.boot:spring-boot-starter-actuator")
     implementation("io.micrometer:micrometer-registry-prometheus")
+    // --- Req 7: Distributed tracing (OTel -> Jaeger) ---
+    implementation("io.micrometer:micrometer-tracing-bridge-otel")
+    implementation("io.opentelemetry:opentelemetry-exporter-otlp")
     implementation("org.flywaydb:flyway-core")
     runtimeOnly("org.postgresql:postgresql")
     testImplementation("org.springframework.boot:spring-boot-starter-test")
+    // --- Req 5.b: Consumer-driven contract test (Pact JVM) ---
+    testImplementation("au.com.dius.pact.consumer:junit5:4.6.10")
 }
 
 tasks.withType<Test> {
