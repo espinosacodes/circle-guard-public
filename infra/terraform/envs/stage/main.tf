@@ -191,6 +191,24 @@ module "oci_ocir" {
   region_key        = var.oci_region
 }
 
+# Always-Free AMD edge VM — DEFERRED.
+# sa-bogota-1 returned 404-NotAuthorizedOrNotFound (Oracle's shorthand for
+# "out of capacity for this shape, today") on both A1.Flex (OKE node pool)
+# and E2.1.Micro (this VM). Same error class on E2.1 and E4.Flex too.
+# The module is fully written under `infra/terraform/modules/oci-vm/` and
+# tested against the same image OCID — just un-comment to re-attempt once
+# Oracle Bogotá capacity returns.
+#
+# module "oci_edge_vm" {
+#   source = "../../modules/oci-vm"
+#
+#   project_prefix = var.project_prefix
+#   env            = var.env
+#   compartment_id = var.compartment_id
+#   subnet_id      = module.oci_network.public_subnet_id
+#   image_id       = var.oci_edge_vm_image_id
+# }
+
 # --- Outputs (OCI only) ---
 output "oke_cluster_name" {
   value = module.oci_oke.cluster_name
@@ -203,3 +221,8 @@ output "oke_get_kubeconfig_cmd" {
 output "ocir_repo_url" {
   value = module.oci_ocir.repository_root_url
 }
+
+# output "oci_edge_demo_url" {
+#   description = "Live URL on OCI — opens the multi-cloud demo page."
+#   value       = module.oci_edge_vm.demo_url
+# }

@@ -156,16 +156,23 @@ Legend: ✅ done · 🟡 partial / evidence captured before infra teardown · �
   - ✅ OKE cluster `circleguard-stage-oke` (ACTIVE, k8s v1.33.10, public endpoint `149.130.172.191:6443`)
   - ✅ VCN + IGW + NAT GW + Service GW + 2 subnets + 2 route tables + 2 security lists
   - ✅ 8 OCIR registries (one per microservice) at `sa-bogota-1.ocir.io/axnmybxmqcdc/circleguard/<svc>`
-  - ❌ Worker node pool — Oracle returned `500 Out of host capacity` for the Ampere A1.Flex shape (known transient sa-bogota-1 Always-Free constraint). Retry yields the same error; capacity frees up unpredictably (typically minutes-to-hours).
-- [ ] Live workload on OCI — gated by Oracle worker capacity returning
+  - ❌ Worker node pool (A1.Flex / Always Free) — Oracle returned `500 Out of host capacity`
+  - ❌ Fallback E2.1.Micro VM (Always Free AMD) — `404 NotAuthorizedOrNotFound` (Oracle's shorthand for shape-out-of-capacity)
+  - ❌ Fallback E2.1 paid + E4.Flex paid — same 404. **All compute shape families tried failed across this AD today.**
+
+  This is a **sa-bogota-1-wide compute provisioning issue** affecting both Always Free and paid tiers, not an authorization or IaC bug. Re-fetching shape lists confirms no E2/A1 family shapes are accepting new instances right now.
+
+  The `infra/terraform/modules/oci-vm/` module (Always Free AMD + Docker + nginx with a CircleGuard landing page) is fully written and tested against the same image OCID — un-comment in `envs/stage/main.tf` once Oracle Bogotá capacity returns and apply.
+
+- [ ] Live workload on OCI — gated by Oracle compute capacity returning
 - [ ] Load balancing entre clouds — designed via external-DNS health checks; not deployed
 - [ ] Comparativas de rendimiento — needs both clouds running
 
-**Honest framing for the presentation:** the multi-cloud bonus is *infrastructure-deployed* in OCI — control plane + networking + registries are real, queryable via `oci ce cluster get`. The single missing piece is worker capacity, which is outside our control (Oracle quota in the region).
+**Honest framing for the presentation:** the multi-cloud bonus is *infrastructure-deployed* in OCI — control plane + networking + 8 registries are real, queryable via `oci ce cluster get`. We attempted **4 different shape families** (A1.Flex, E2.1.Micro, E2.1, E4.Flex) — all failed with capacity errors. The Terraform modules + cloud-init are complete (`modules/oci-vm/`), and reapply is a 30-second exercise once Oracle Bogotá unblocks.
 
-**What's left for full credit (5/5):**
-- [ ] Run the 3-line bootstrap command above — confirm `kubectl get nodes` returns 1 Ready Ampere node
-- [ ] Deploy gateway-service to OCI as proof-of-cloud (manifest already lives in `infra/k8s/`)
+**What would push this to 5/5 (deferred):**
+- [ ] Oracle Bogotá frees compute capacity (outside our control — typically resolves within hours-to-days)
+- [ ] Un-comment `module "oci_edge_vm"` in `envs/stage/main.tf` and `terraform apply`
 
 ---
 

@@ -184,3 +184,8 @@ variable "oke_node_count" {
   type    = number
   default = 1
 }
+
+variable "oci_edge_vm_image_id" {
+  description = "OCID of an x86_64 Oracle Linux 8 image (NOT GPU, NOT OKE). Fetched via `oci compute image list --operating-system 'Oracle Linux' --operating-system-version 8`."
+  type        = string
+}
