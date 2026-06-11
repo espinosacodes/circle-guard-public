@@ -129,20 +129,19 @@ Legend: ✅ done · 🟡 partial / evidence captured before infra teardown · �
 
 ---
 
-## 9. Documentación y Presentación (10%)  —  🟡 7/10
+## 9. Documentación y Presentación (10%)  —  ✅ 10/10
 
 - [x] Documentación completa — 14 docs in `docs/` covering all rubric reqs
 - [x] Repositorio Git organizado — `docs/REPOSITORY_MAP` section in `README.md`
 - [x] Costos de infraestructura — `docs/COSTS.md` per-env forecast + FinOps strategies
 - [x] Manual de operaciones — `docs/OPERATIONS.md` (cold start + day-2 + DR drill procedures)
-- [x] Presentación 20-30 min — **LIVE format** (not video). Script in `VIDEO_SCRIPT_FINAL.md` (re-use timeline)
+- [x] Presentación 20-30 min — **LIVE format** (not video). Marp deck at `docs/PRESENTATION_SLIDES.md` (27 slides, 28-min timeline, Spanish narration + English code paths, speaker notes)
+- [x] 10 screenshots evidence — under `screenshots/final/`
 
-**What's left for the live presentation:**
-- [ ] Slides deck (Keynote/PowerPoint/Google Slides) derived from `docs/PROJECT_COMPLETION.md` rubric table
-- [ ] Pre-flight: cluster up, port-forwards ready, browser tabs prepped
+**Pre-flight before the live demo:**
+- [ ] Open all browser tabs (board, pipeline, milestone, ARCHITECTURE.md, COSTS.md, MULTICLOUD_OCI.md, OCI console, GCP console)
+- [ ] Render PDF backup of the slide deck (`npx marp docs/PRESENTATION_SLIDES.md --pdf`)
 - [ ] Dry run with `docs/DEMO_RECORDING_GUIDE.md` as the shot list
-
-**Gap (-3 pts):** Slides not yet built. ~1h work.
 
 ---
 
@@ -153,10 +152,16 @@ Legend: ✅ done · 🟡 partial / evidence captured before infra teardown · �
 - [x] Multi-cloud designed — `docs/ARCHITECTURE.md` §5 now labelled GCP+OCI; full rationale in `docs/MULTICLOUD_OCI.md`
 - [x] Backup strategy designed — `docs/OPERATIONS.md` §backups + §DR
 - [x] Scaffold `infra/terraform/modules/oci-{network,oke,ocir}/` — done, mirrors Azure module style; wired into `envs/{stage,prod}/`
-- [x] Apply OCI stage env: `cd infra/terraform/envs/stage && terraform init && terraform apply` (manual step for student — see `docs/MULTICLOUD_OCI.md` §5)
-- [ ] **Despliegue real en 2 clouds** — teammate's GCP redo + actual `terraform apply` against OCI (final 1/5 unlocks here)
+- [x] **Apply OCI stage env** — 2026-06-10: `terraform apply` ran successfully on **19 of 20 resources**:
+  - ✅ OKE cluster `circleguard-stage-oke` (ACTIVE, k8s v1.33.10, public endpoint `149.130.172.191:6443`)
+  - ✅ VCN + IGW + NAT GW + Service GW + 2 subnets + 2 route tables + 2 security lists
+  - ✅ 8 OCIR registries (one per microservice) at `sa-bogota-1.ocir.io/axnmybxmqcdc/circleguard/<svc>`
+  - ❌ Worker node pool — Oracle returned `500 Out of host capacity` for the Ampere A1.Flex shape (known transient sa-bogota-1 Always-Free constraint). Retry yields the same error; capacity frees up unpredictably (typically minutes-to-hours).
+- [ ] Live workload on OCI — gated by Oracle worker capacity returning
 - [ ] Load balancing entre clouds — designed via external-DNS health checks; not deployed
 - [ ] Comparativas de rendimiento — needs both clouds running
+
+**Honest framing for the presentation:** the multi-cloud bonus is *infrastructure-deployed* in OCI — control plane + networking + registries are real, queryable via `oci ce cluster get`. The single missing piece is worker capacity, which is outside our control (Oracle quota in the region).
 
 **What's left for full credit (5/5):**
 - [ ] Run the 3-line bootstrap command above — confirm `kubectl get nodes` returns 1 Ready Ampere node
