@@ -41,7 +41,7 @@ For each shot: **what to show**, **commands to type**, **what to point at**.
 - Show: `docs/ARCHITECTURE.md` rendered in GitLab (the Mermaid diagrams render natively)
 - Open: https://gitlab.com/espinosacodes/circle-guard-final/-/blob/main/docs/ARCHITECTURE.md
 - Point at each diagram in order: C4 L1, C4 L2, C4 L3 (promotion-service), Data model, Deployment topology, Request flow
-- For the deployment topology, emphasise GCP primary + AKS secondary
+- For the deployment topology, emphasise GCP primary + OCI secondary (multi-cloud bonus, see `docs/MULTICLOUD_OCI.md`)
 - No commands
 
 ### 6:00–9:00 — Agile + GitFlow + Kanban

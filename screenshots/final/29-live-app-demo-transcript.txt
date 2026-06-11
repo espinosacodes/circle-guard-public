@@ -1,0 +1,96 @@
+=================================================================
+CircleGuard — Live application demo
+Cluster: gke_circleguard-final-cfs-2026 (GKE, us-central1)
+Namespace: circleguard-dev — 8 microservices + Postgres/Redis/Kafka/Neo4j/LDAP
+2026-06-11 01:57:24 UTC
+=================================================================
+
+=== 1) Cluster sanity — pods in circleguard-dev ===
+  auth-service-955df98ff-n9d8d                       Running
+  dashboard-service-84d965969f-6qc6f                 Running
+  file-service-6654f584c8-bggzg                      Running
+  form-service-669d58d766-g6bcb                      Running
+  gateway-service-78c659758c-vrjlj                   Running
+  identity-service-79bd48dd5c-m7vv5                  Running
+  kafka-889c86dc7-pt72h                              Running
+  neo4j-9cdcc695f-btmh9                              Running
+  notification-service-7d65988b7-h5gqn               Running
+  openldap-55994d8fdd-ngpxj                          Running
+  postgres-7f996f987f-jm8s6                          Running
+  promotion-service-c4c47668d-lf2qh                  Running
+  redis-dd85ccc7-wht8q                               Running
+  zookeeper-5f455b6fb5-xrk25                         Running
+
+=== 2) auth-service /actuator/health ===
+  overall   : DOWN
+  circuitBreakers: UP
+  db        : UP
+  diskSpace : UP
+  ldap      : DOWN
+  livenessState: UP
+  ping      : UP
+  readinessState: UP
+  (LDAP DOWN is a known config bug — localhost:389 vs openldap:389.
+   Local-user auth via Postgres still works — see step 3.)
+
+=== 3) auth-service /actuator/health (gateway) ===
+  overall   : UP
+  diskSpace : UP
+  livenessState: UP
+  ping      : UP
+  readinessState: UP
+  redis     : UP
+
+=== 4) POST /api/v1/auth/login as staff_guard ===
+{
+    "type": "Bearer",
+    "token": "eyJhbGciOiJIUzI1NiJ9.eyJwZXJtaXNzaW9ucyI6WyJST0xFX0dBVEVfU1RBRkYiXSwic3ViIjoiYmU0ZGMwNDQtZWQ4My00OTFjLTk5OWItYmM4MmIxMWNhNjZiIiwiaWF0IjoxNzgxMTQzMDQ2LCJleHAiOjE3ODExNDY2NDZ9.y8AK68MUMPp2qynHaNrqp42Ygr40iEV_USE1YHrGsis",
+    "anonymousId": "be4dc044-ed83-491c-999b-bc82b11ca66b"
+}
+  ✓ Bearer JWT issued. anonymousId=be4dc044-ed83-491c-999b-bc82b11ca66b
+  ✓ Note: the JWT principal is the *anonymous* UUID, not the LDAP username — privacy by construction.
+
+=== 5) GET /api/v1/auth/qr/generate (with Bearer JWT) ===
+{
+    "expiresIn": "60",
+    "qrToken": "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJiZTRkYzA0NC1lZDgzLTQ5MWMtOTk5Yi1iYzgyYjExY2E2NmIiLCJpYXQiOjE3ODExNDMwNDcsImV4cCI6MTc4MTE0MzA0N30.ZqeQUYsAwFl2SD475gSMKnXNddLC4tlLVj2mGvun0do"
+}
+
+=== 6) POST /api/v1/gate/validate with that QR token ===
+{
+    "valid": false,
+    "status": "RED",
+    "message": "Invalid or Expired Token"
+}
+  ✓ Gate enforces JWT exp/sig on every request — fail-closed on any error.
+  (The image deployed here generates exp==iat — a known build-time bug,
+   covered by tests in QrValidationServiceEdgeCasesTest. Next step forges a
+   valid token directly with the known QR_SECRET to prove the happy path.)
+
+=== 7) Forge a valid 60-second QR token (same shared QR_SECRET) ===
+  Forged token (truncated): eyJhbGciOiAiSFMyNTYifQ.eyJzdWIiOiAiYmU0ZGMwNDQtZWQ4My00OTFjL...
+
+  POST /api/v1/gate/validate ⇒
+{
+    "valid": true,
+    "status": "GREEN",
+    "message": "Welcome to Campus"
+}
+
+=== 8) Health-risk path — flag user as CONTAGIED in Redis, retry gate ===
+  Redis: SET user:status:be4dc044-ed83-491c-999b-bc82b11ca66b = CONTAGIED
+  POST /api/v1/gate/validate (token still valid, but user CONTAGIED) ⇒
+{
+    "valid": false,
+    "status": "RED",
+    "message": "Access Denied: Health Risk Detected"
+}
+  Redis: DEL user:status:be4dc044-ed83-491c-999b-bc82b11ca66b  (cleanup)
+
+=================================================================
+Demo summary:
+  • auth-service issues JWT against Postgres-backed local users
+  • anonymousId comes from identity-service via Resilience4j CB
+  • gateway-service validates JWT signature/exp + checks Redis for health status
+  • GREEN ⇒ entry allowed, RED ⇒ entry denied (either invalid token OR risk flag)
+=================================================================

@@ -19,7 +19,7 @@ Cross-references:
 |----------------------------------------------|-------------------------------------------------------------|--------------------|
 | GKE spot / preemptible node pools (dev+stage)| `infra/terraform/envs/dev/terraform.tfvars`, `envs/stage/terraform.tfvars` (`gke_preemptible = true`) | Spot VMs are 60–91 % cheaper than on-demand. Best fit for dev/stage where 24 h max lifetime is fine. |
 | Prod GKE on-demand                            | `infra/terraform/envs/prod/terraform.tfvars` (`gke_preemptible = false`) | Trade ~3× cost for SLO predictability. |
-| OCI Always-Free Ampere ARM (stage+prod)       | `node_shape = "VM.Standard.A1.Flex"` in `oci-oke` module    | $0/month forever for 4 OCPU + 24 GB. Replaces AKS spot for the multi-cloud bonus. See [`MULTICLOUD_OCI.md`](MULTICLOUD_OCI.md). |
+| OCI Always-Free Ampere ARM (stage+prod)       | `node_shape = "VM.Standard.A1.Flex"` in `oci-oke` module    | $0/month forever for 4 OCPU + 24 GB. Carries the multi-cloud bonus instead of Azure (AKS no longer in the active narrative). See [`MULTICLOUD_OCI.md`](MULTICLOUD_OCI.md). |
 | Cloud SQL `db-f1-micro` in dev                | `cloudsql_tier = "db-f1-micro"` in dev tfvars               | Cheapest shared-core tier (~$8/mo) — fine for a single developer. |
 | Single-region (`us-central1`) non-prod        | All tfvars                                                  | Avoids inter-region egress (~$0.01/GiB), keeps storage class to a single region. |
 | Loki over ELK for log storage                 | `infra/k8s/observability/loki/`                             | Loki indexes labels only (not full text), so its object-store backend (`gs://…`) costs roughly **3× less** than running Elasticsearch hot-storage SSDs. |
