@@ -4,6 +4,9 @@
 # Terraform, IDEs, OS junk, secrets, test/coverage artifacts, AI assistants.
 # ─────────────────────────────────────────────────────────────────────────────
 
+# ─── Browser-automation debug artefacts ──────────────────────────────────────
+.playwright-mcp/
+
 # ─── Secrets / environment ───────────────────────────────────────────────────
 .env
 .env.*
