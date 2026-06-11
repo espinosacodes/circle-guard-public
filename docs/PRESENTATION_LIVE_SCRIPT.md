@@ -21,7 +21,7 @@ kubectl get pods -n circleguard-dev | grep -v Running   # debe estar vacío
 kubectl get pods -n observability   | grep -v Running   # debe estar vacío
 ```
 
-### Paso 2 — Port-forwards en 4 terminales separadas
+### Paso 2 — Port-forwards en 5 terminales separadas
 ```bash
 # Terminal 1 — Grafana
 kubectl port-forward -n observability svc/kps-grafana 3000:80
@@ -30,10 +30,15 @@ kubectl port-forward -n observability svc/kps-grafana 3000:80
 kubectl port-forward -n observability svc/jaeger-query 16686:16686
 
 # Terminal 3 — Kiali
-istioctl dashboard kiali
+kubectl port-forward -n istio-system svc/kiali 20001:20001
 
-# Terminal 4 — Gateway service (para curl/Postman)
-kubectl port-forward -n circleguard-dev svc/gateway-service 8080:8080
+# Terminal 4 — Auth service (para login → JWT)
+# NOTA: el "gateway-service" del repo NO es un API proxy — solo expone /api/v1/gate (QR).
+# El reverse-proxy real lo hace Istio en mesh. Para la demo apuntamos directo al auth.
+kubectl port-forward -n circleguard-dev svc/auth-service 8080:8180
+
+# Terminal 5 — Promotion service (para la acción saga del health-center)
+kubectl port-forward -n circleguard-dev svc/promotion-service 8088:8088
 ```
 
 ### Paso 3 — Verificar que `/actuator/prometheus` está vivo (30 seg)
@@ -43,16 +48,23 @@ curl -s http://localhost:8080/actuator/prometheus | head -3
 # (8/8 servicios responden 200 desde el commit 816d76e)
 ```
 
+### Paso 3.b — Recuperar el password REAL de Grafana (15 seg)
+```bash
+kubectl -n observability get secret grafana-admin-credentials \
+  -o jsonpath='{.data.admin-password}' | base64 -d; echo
+# El chart genera password aleatorio en cada install — el del Tab 6 puede estar desactualizado.
+```
+
 **Tabs ya abiertos en el navegador (en este orden):**
 1. https://gitlab.com/espinosacodes/circle-guard-final/-/boards/11343311
 2. https://gitlab.com/espinosacodes/circle-guard-final/-/pipelines
 3. https://sonarcloud.io/project/overview?id=espinosacodes_circle-guard-final *(solo si pegaste el token; si no, salteala)*
 4. https://console.cloud.google.com/kubernetes/clusters/details/us-central1/circleguard-dev-gke/details?project=circleguard-final-cfs-2026
 5. https://cloud.oracle.com/containers/clusters?region=sa-bogota-1
-6. http://localhost:3000 (Grafana — admin / `CircleGuardDev2026!`)
+6. http://localhost:3000 (Grafana — user `admin`, password = output del **Paso 3.b**)
 7. http://localhost:20001 (Kiali)
 8. http://localhost:16686 (Jaeger)
-9. Postman con la colección importada (o este archivo abierto al lado)
+9. Terminal extra con curl + `jq` (no hay colección Postman commiteada — usamos curl)
 10. VSCode en `services/circleguard-auth-service/src/main/java/com/circleguard/auth/client/IdentityClient.java`
 
 ---
@@ -117,9 +129,9 @@ oci ce cluster get \
 
 > **Driver:** Santiago · **Speaker:** Santiago
 
-[Cambiar a terminal con port-forward del gateway en 8080]
+[Cambiar a la terminal con port-forward de auth-service en 8080]
 
-**SANTIAGO:** *"La aplicación está viva. Probemos el flujo end-to-end por la API gateway."*
+**SANTIAGO:** *"La aplicación está viva. Probemos el flujo end-to-end — login, JWT, y una acción del centro de salud que dispara el saga."*
 
 [Comando 1 — health]
 ```bash
@@ -127,31 +139,33 @@ curl -s http://localhost:8080/actuator/health/liveness
 # Esperado: {"status":"UP"}
 ```
 
-[Comando 2 — login → JWT]
+[Comando 2 — login real → JWT]
 ```bash
-curl -s -X POST http://localhost:8080/api/v1/auth/login \
+TOKEN=$(curl -s -X POST http://localhost:8080/api/v1/auth/login \
   -H "Content-Type: application/json" \
-  -d '{"username":"jdoe","password":"demo"}' | jq .
+  -d '{"username":"super_admin","password":"password"}' | jq -r .token)
+echo $TOKEN | cut -c1-60; echo "..."
+# super_admin / password viene del seed V2__seed_test_users.sql
 ```
 
-**SANTIAGO:** *"Auth-service responde, emite un JWT. Ese token sirve para el siguiente endpoint, que es el **caso de uso central**: un oficial del centro de salud promueve a un estudiante de Suspect a Confirmed, y el saga dispara las notificaciones."*
+**SANTIAGO:** *"Auth-service responde, emite un JWT firmado HS256 con permisos y `anonymousId`. Ese token autoriza el siguiente endpoint, que es el **caso de uso central**: un oficial del centro de salud detecta un caso confirmado y **fuerza cuarentena sobre un círculo de contactos** — eso dispara el saga: promotion-service publica el evento a Kafka, notification-service lo consume y dispara las alertas."*
 
-[Comando 3 — Postman o curl con el JWT]
+[Comando 3 — acción de health-center con el JWT (port-forward 8088)]
 ```bash
-TOKEN="<paste-the-jwt>"
-curl -s -X POST http://localhost:8080/api/v1/promotion/health-center/promote \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"suspectHashId":"a3f9b2c1...","evidenceUrl":"s3://demo/evidence.pdf","reason":"PCR positiva"}'
-# Esperado: 202 Accepted + correlationId
+curl -s -w "\n[HTTP %{http_code}]\n" -X POST \
+  http://localhost:8088/api/v1/circles/1/force-fence \
+  -H "Authorization: Bearer $TOKEN"
+# Esperado: 200 OK (autorizado por rol HEALTH_CENTER del JWT)
 ```
 
-**SANTIAGO:** *"202 Accepted, correlation ID. En paralelo:"*
+**SANTIAGO:** *"200 OK. En paralelo, los logs del promotion-service muestran el span del saga:"*
 
 [En otra terminal — opcional, mostrar logs]
 ```bash
 kubectl logs -n circleguard-dev deploy/promotion-service --tail=20
 ```
+
+> ⚠️ **Honestidad bajo presión:** si el profe pregunta por el endpoint `/api/v1/promotion/health-center/promote`, decí: *"Ese path tiene un guard a nivel de SecurityConfig que pide rol `HEALTH_CENTER_OFFICER` mientras la DB seedea `HEALTH_CENTER` — un nombre desalineado entre `SecurityConfig.java:60` y `V1__initial_auth_schema.sql:44`. Bug conocido en backlog. El `@PreAuthorize` de método de los otros endpoints usa el nombre correcto, por eso `force-fence` autoriza limpio."*
 
 ---
 
@@ -185,11 +199,13 @@ kubectl logs -n circleguard-dev deploy/promotion-service --tail=20
 
 > **Driver:** Santiago · **Speaker:** Santiago
 
-[Abrir Grafana en `http://localhost:3000` (admin / `CircleGuardDev2026!`)]
+[Abrir Grafana en `http://localhost:3000` — user `admin`, password = output del Paso 3.b]
 
 **SANTIAGO:** *"Stack de observabilidad: **kube-prometheus-stack** + **Loki** + **Jaeger**, todo en el namespace `observability`."*
 
-[Dashboard "CircleGuard / Auth Service"]
+[Dashboard "CircleGuard / Auth Service" — en la barra superior del dashboard, seleccionar **Prometheus** en el dropdown `Datasource` si los paneles dicen "No data" (los dashboards usan la variable `${DS_PROMETHEUS}`).]
+
+> **Plan B si los paneles tardan o salen "No data":** menú izquierdo → **Explore** → datasource Prometheus → `up{namespace="circleguard-dev"}` → Run query. Muestra los 8 servicios UP, muy visual. Después podés tirar `rate(http_server_requests_seconds_count[1m])`.
 
 **SANTIAGO:** *"Por cada servicio: RPS, latencia p50/p95/p99, error rate, JVM heap, y el estado del circuit breaker de Resilience4j."*
 
@@ -305,7 +321,8 @@ Patrón: **uno tiene el teclado, el otro habla**. Cambian cada bloque.
 | Port-forward de Grafana | `screenshots/final/32-grafana-namespace-pods.png` |
 | Pipeline en vivo | Pipeline verde anterior (link directo) + `screenshots/final/31-prometheus-targets.png` |
 | OCI console no responde | `oci ce cluster get` por CLI (mismo output, sin browser) |
-| curl al gateway | `kubectl logs -n circleguard-dev deploy/gateway-service --tail=5` para mostrar que está vivo |
+| curl al auth-service | `kubectl logs -n circleguard-dev deploy/auth-service --tail=5` para mostrar que está vivo |
+| force-fence devuelve 403 o 5xx | Cae al login (Comando 2) — el JWT ya prueba que la cadena auth → JWT funciona. Saltá a Jaeger/Grafana. |
 | Kiali no carga | `kubectl get authorizationpolicies,virtualservices -A` |
 | Jaeger sin trazas | `kubectl get pods -n observability` + `screenshots/final/33-kiali-mesh-graph.png` |
 | `/actuator/prometheus` 404 en algún servicio | `curl http://localhost:8080/actuator/prometheus` → 200 en gateway prueba la cadena; mostrá el commit `816d76e` |
@@ -325,6 +342,8 @@ Patrón: **uno tiene el teclado, el otro habla**. Cambian cada bloque.
 | *"¿Qué harían diferente?"* | "Tres cosas: contract tests de Pact desde el sprint 1 (no al final), runbooks paralelos al desarrollo, y **tags únicos por build** desde el primer deploy — nos comimos varias horas peleando contra GKE usando imágenes cacheadas con `IfNotPresent`." |
 | *"¿Por qué solo 5 de 8 servicios emiten spans en Jaeger?"* | "Los 8 están instrumentados — los 3 restantes (auth, dashboard, gateway) necesitan rebuild + redeploy con el OTel exporter, ~10 min cada uno. Decisión consciente: priorizamos los 5 que están en el camino crítico del caso de uso de promoción." |
 | *"¿Por qué dos contratos Pact y no uno entre cada par?"* | "Cada nuevo contrato es ~45 min de implementación. Cubrimos los 2 caminos más críticos: auth→identity (login) y form→promotion (caso de uso central). Los otros 6 quedan documentados como deuda técnica en USER_STORIES.md." |
+| *"¿Por qué llamás directo a auth-service y no al gateway?"* | "Lo que en el repo se llama `gateway-service` no es un reverse-proxy — es un microservicio que valida tokens QR físicos en `/api/v1/gate` (los kioscos de entrada al campus). El reverse-proxy en producción es **Istio Ingress** dentro del mesh. Para el demo apuntamos directo al servicio, idéntico a cómo lo llamaría el ingress." |
+| *"El endpoint `/promotion/health-center/promote` da 403, ¿por qué?"* | "Tenemos un nombre desalineado entre `SecurityConfig.java:60` (`HEALTH_CENTER_OFFICER`) y la migration `V1__initial_auth_schema.sql:44` (`HEALTH_CENTER`). El método-level `@PreAuthorize` de los otros endpoints sí usa el nombre correcto, por eso `force-fence` autoriza limpio. Bug conocido — fix de una línea en backlog." |
 | *"¿Cuál fue el bug más difícil que enfrentaron?"* | "El `404 en /actuator/prometheus`. Era una cadena de tres causas: dependencia Maven faltante en 3 servicios, `imagePullPolicy: IfNotPresent` corriendo imágenes viejas en GKE, y `PeerAuthentication STRICT` bloqueando Prometheus por estar fuera del mesh. Los 3 fixes están en el commit `816d76e`." |
 
 ---
