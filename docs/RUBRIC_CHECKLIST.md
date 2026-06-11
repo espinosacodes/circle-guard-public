@@ -4,7 +4,7 @@
 **Last updated:** 2026-06-10 (live cluster verified) · **Format:** live presentation + video
 **Live cluster:** GCP project `circleguard-final-cfs-2026`, GKE `circleguard-dev-gke` (us-central1, 4 nodes RUNNING)
 **Multi-cloud:** GCP + OCI (Azure removed from narrative; AKS/ACR Terraform modules disabled)
-**Self-scored cap:** 113 / 120 (90 core + 19 bonus + 4 live observability evidence)
+**Self-scored cap:** 113 / 120 (93 core + 19 bonus, post OTel + Pact + business gauge)
 
 Legend: ✅ done · 🟡 partial / evidence captured · ⏳ in progress · ❌ not started · 📸 needs screenshot
 
@@ -70,7 +70,7 @@ Legend: ✅ done · 🟡 partial / evidence captured · ⏳ in progress · ❌ n
 
 ---
 
-## 5. Pruebas Completas (15%)  —  🟡 11/15
+## 5. Pruebas Completas (15%)  —  🟡 12/15
 
 - [x] Pruebas unitarias — Java/JUnit5 in every `services/*/src/test/java/`. Coverage report via JaCoCo
 - [x] Pruebas de integración — `tests/integration/`, plus per-service IT (FeatureToggleIT, HealthCenterPromotionIT)
@@ -98,7 +98,7 @@ Legend: ✅ done · 🟡 partial / evidence captured · ⏳ in progress · ❌ n
 
 ---
 
-## 7. Observabilidad y Monitoreo (10%)  —  ⚙️ 8/10
+## 7. Observabilidad y Monitoreo (10%)  —  ✅ 10/10
 
 - [x] Prometheus + Grafana — `kube-prometheus-stack` running in `observability` namespace. **22+ scrape targets UP** (apiserver, kubelet × 11, node-exporter × 4, kube-state-metrics, alertmanager × 2, grafana, prometheus × 2). 📸 `screenshots/final/31-prometheus-targets.png`.
 - [x] Log management — Loki + Promtail running (chose over ELK; justification in `docs/OBSERVABILITY.md` §6).
