@@ -1,5 +1,6 @@
 package com.circleguard.form.service;
 
+import com.circleguard.form.metrics.BusinessMetricsRecorder;
 import com.circleguard.form.model.HealthSurvey;
 import com.circleguard.form.model.Questionnaire;
 import com.circleguard.form.model.ValidationStatus;
@@ -20,6 +21,7 @@ public class HealthSurveyService {
     private final QuestionnaireService questionnaireService;
     private final SymptomMapper symptomMapper;
     private final KafkaTemplate<String, Object> kafkaTemplate;
+    private final BusinessMetricsRecorder metricsRecorder;
 
     private static final String TOPIC_SURVEY_SUBMITTED = "survey.submitted";
     private static final String TOPIC_CERTIFICATE_VALIDATED = "certificate.validated";
@@ -50,7 +52,11 @@ public class HealthSurveyService {
             "timestamp", System.currentTimeMillis()
         );
         kafkaTemplate.send(TOPIC_SURVEY_SUBMITTED, saved.getAnonymousId().toString(), event);
-        
+
+        // Req 7: business metrics. Recorded after the DB save + Kafka emit
+        // so the counter only reflects fully-accepted submissions.
+        metricsRecorder.recordFromSurvey(saved, hasSymptoms);
+
         return saved;
     }
 

@@ -4,27 +4,73 @@
 # Reusable `.notify_slack` template + concrete jobs that fire only on
 # pipeline failure (any stage) and on successful production deploys.
 #
+# The payload uses Slack's Block Kit + an attachment color so the
+# message renders with a red/green sidebar in the channel, plus a
+# clickable link to the pipeline. See docs/SLACK_SETUP.md for the
+# webhook-creation walk-through.
+#
 # Required CI/CD variable:
-#   - SLACK_WEBHOOK_URL  (masked, incoming-webhook URL)
+#   - SLACK_WEBHOOK_URL  (masked + protected, Incoming-webhook URL)
 # =====================================================================
 
 .notify_slack:
   image: curlimages/curl:8.7.1
   variables:
-    SLACK_CHANNEL: "#circleguard-cicd"
+    SLACK_CHANNEL: "#circleguard-ci"
+    # Defaults — overridden per concrete job below.
+    ICON: ":rotating_light:"
+    COLOR: "#cccccc"
+    STATUS_TEXT: "Notification"
   script:
     - |
       if [ -z "${SLACK_WEBHOOK_URL}" ]; then
         echo "SLACK_WEBHOOK_URL not set — skipping notification."
         exit 0
       fi
+      COMMIT_URL="${CI_PROJECT_URL}/-/commit/${CI_COMMIT_SHA}"
+      PIPELINE_URL="${CI_PIPELINE_URL}"
+      COMMIT_TITLE="${CI_COMMIT_TITLE:-(no commit title)}"
+      AUTHOR="${GITLAB_USER_NAME:-${CI_COMMIT_AUTHOR:-unknown}}"
+      PAYLOAD=$(cat <<JSON
+      {
+        "channel": "${SLACK_CHANNEL}",
+        "username": "circleguard-ci",
+        "icon_emoji": "${ICON}",
+        "attachments": [
+          {
+            "color": "${COLOR}",
+            "blocks": [
+              {
+                "type": "section",
+                "text": {
+                  "type": "mrkdwn",
+                  "text": "${ICON} *${STATUS_TEXT}* — \`${CI_PROJECT_PATH}\`"
+                }
+              },
+              {
+                "type": "section",
+                "fields": [
+                  { "type": "mrkdwn", "text": "*Branch / tag:*\n\`${CI_COMMIT_REF_NAME}\`" },
+                  { "type": "mrkdwn", "text": "*Commit:*\n<${COMMIT_URL}|${CI_COMMIT_SHORT_SHA}>" },
+                  { "type": "mrkdwn", "text": "*Author:*\n${AUTHOR}" },
+                  { "type": "mrkdwn", "text": "*Pipeline:*\n<${PIPELINE_URL}|#${CI_PIPELINE_ID}>" }
+                ]
+              },
+              {
+                "type": "context",
+                "elements": [
+                  { "type": "mrkdwn", "text": "> ${COMMIT_TITLE}" }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+      JSON
+      )
+      echo "Posting Slack notification (status=${STATUS_TEXT})..."
       curl -fsSL -X POST -H 'Content-Type: application/json' \
-        --data "{
-          \"channel\": \"${SLACK_CHANNEL}\",
-          \"username\": \"circleguard-ci\",
-          \"icon_emoji\": \"${ICON:-:rotating_light:}\",
-          \"text\": \"${MESSAGE}\"
-        }" \
+        --data "${PAYLOAD}" \
         "${SLACK_WEBHOOK_URL}"
 
 notify:failure:
@@ -32,7 +78,8 @@ notify:failure:
   stage: notify
   variables:
     ICON: ":x:"
-    MESSAGE: ":x: *Pipeline FAILED* on `${CI_PROJECT_PATH}` — branch `${CI_COMMIT_REF_NAME}` (${CI_COMMIT_SHORT_SHA}). <${CI_PIPELINE_URL}|view pipeline> | <${CI_COMMIT_AUTHOR}>"
+    COLOR: "#d50200"
+    STATUS_TEXT: "Pipeline FAILED"
   rules:
     - when: on_failure
 
@@ -41,7 +88,8 @@ notify:prod-success:
   stage: notify
   variables:
     ICON: ":rocket:"
-    MESSAGE: ":rocket: *Production deploy SUCCEEDED* on `${CI_PROJECT_PATH}` — `${CI_COMMIT_REF_NAME}` (${CI_COMMIT_SHORT_SHA}). <${CI_PIPELINE_URL}|view pipeline>"
+    COLOR: "#36a64f"
+    STATUS_TEXT: "Production deploy SUCCEEDED"
   needs:
     - job: deploy:prod
       artifacts: false

@@ -1,0 +1,65 @@
+{
+  "consumer": {
+    "name": "auth-service"
+  },
+  "interactions": [
+    {
+      "description": "a request to map realIdentity 'jdoe' to an anonymous UUID",
+      "providerStates": [
+        {
+          "name": "user jdoe exists in identity-service"
+        }
+      ],
+      "request": {
+        "body": {
+          "realIdentity": "jdoe"
+        },
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "method": "POST",
+        "path": "/api/v1/identities/map"
+      },
+      "response": {
+        "body": {
+          "anonymousId": "e2490de5-5bd3-43d5-b7c4-526e33f71304"
+        },
+        "generators": {
+          "body": {
+            "$.anonymousId": {
+              "type": "Uuid"
+            }
+          }
+        },
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "matchingRules": {
+          "body": {
+            "$.anonymousId": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+                }
+              ]
+            }
+          }
+        },
+        "status": 200
+      }
+    }
+  ],
+  "metadata": {
+    "pact-jvm": {
+      "version": "4.6.14"
+    },
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  },
+  "provider": {
+    "name": "identity-service"
+  }
+}

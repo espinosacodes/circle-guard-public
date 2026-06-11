@@ -39,3 +39,16 @@ server:
 jwt:
   secret: ${JWT_SECRET:my-super-secret-dev-key-32-chars-long-12345678}
   expiration: ${JWT_EXPIRATION:3600000}
+
+# --- Req 7: Business metrics over Prometheus ---
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: always
+  metrics:
+    tags:
+      application: ${spring.application.name}

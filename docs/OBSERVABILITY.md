@@ -178,6 +178,78 @@ sum(rate(circleguard_check_ins_rate{result="ok"}[1m]))
 
 ---
 
+## 4.bis Distributed Tracing with the OpenTelemetry Java Agent
+
+Spans are produced by a **shared-volume init container** rather than by
+adding the OTel SDK to every service's build. This satisfies rubric
+Requirement 7 ("tracing distribuido") with zero source-code changes —
+every Spring Boot service is auto-instrumented at JVM boot.
+
+The patch lives at
+[`infra/k8s/observability/otel-agent-patch.yaml`](../infra/k8s/observability/otel-agent-patch.yaml)
+and is wired into the dev rollout via
+[`k8s/dev/kustomization.yaml`](../k8s/dev/kustomization.yaml). Full
+operator handbook (apply / verify / roll back / `ghcr.io`-free
+variant): [`infra/k8s/observability/otel-agent-README.md`](../infra/k8s/observability/otel-agent-README.md).
+
+### What gets injected
+
+```
++--------------------- Pod ----------------------+
+|  initContainer: otel-agent-init                |
+|    autoinstrumentation-java:2.5.0              |
+|    cp /javaagent.jar -> emptyDir /otel/        |
+|                                                |
+|  container: <service-name>                     |
+|    JAVA_TOOL_OPTIONS=-javaagent:/otel/...jar   |
+|    OTLP/HTTP -> jaeger-collector :4318         |
++------------------------------------------------+
+```
+
+### Configuration
+
+| OTel env var                  | Value                                                                                  | Why                                                                          |
+|-------------------------------|----------------------------------------------------------------------------------------|------------------------------------------------------------------------------|
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | `http://jaeger-collector.observability.svc.cluster.local:4318`                         | OTLP/HTTP, plain in-cluster traffic                                          |
+| `OTEL_EXPORTER_OTLP_PROTOCOL` | `http/protobuf`                                                                        | Crosses every NetworkPolicy that already allows HTTP                         |
+| `OTEL_SERVICE_NAME`           | `metadata.labels['app']` via downward API                                              | Each service shows up under its own name in the Jaeger UI                    |
+| `OTEL_RESOURCE_ATTRIBUTES`    | `deployment.environment=dev,service.namespace=circleguard`                             | Groups all 8 services under one product in Jaeger search                     |
+| `OTEL_TRACES_SAMPLER`         | `parentbased_traceidratio`                                                             | Honours upstream sampling decisions; no orphan spans                         |
+| `OTEL_TRACES_SAMPLER_ARG`     | `0.1`                                                                                  | 10% head-based — matches `jaeger/values.yaml` `default_strategy`             |
+| `OTEL_METRICS_EXPORTER`       | `none`                                                                                 | Prometheus already scrapes `/actuator/prometheus`; avoid double-counting     |
+| `OTEL_LOGS_EXPORTER`          | `none`                                                                                 | Promtail already ships stdout to Loki                                        |
+
+### Sampling rationale (10%)
+
+Head-based 10% sampling keeps the Jaeger memory backend within its
+50k-trace budget while still giving developers enough spans to debug a
+single user journey. The same value lives in the Jaeger Helm
+`samplingConfig` so the collector and the SDK agree — preventing the
+"agent sampled in, collector sampled out" trap that drops random spans
+silently.
+
+For load tests, set `OTEL_TRACES_SAMPLER_ARG=1.0` on the deployment
+under test. For prod once volume stabilises, drop to `0.01` and graduate
+to tail-based sampling at an **OpenTelemetry Collector** (DaemonSet) —
+that's the upgrade path documented in the README.
+
+### Production upgrade path
+
+The current setup sends OTLP directly from the JVM to Jaeger. In prod
+this should become:
+
+```
+JVM agent -> OTel Collector (DaemonSet) -> Jaeger (Elasticsearch backend)
+                                      \-> Tempo / X-Ray / etc. (optional)
+```
+
+The Collector adds tail-based sampling (keep 100% of errors and slow
+traces), redaction (PII), batching, retries with back-off and
+multi-backend fan-out. The change is configuration-only — services keep
+emitting OTLP on `4318`, only the target IP changes.
+
+---
+
 ## 5. Health checks
 
 Each Spring Boot service must expose split health groups so K8s probes

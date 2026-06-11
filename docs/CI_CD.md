@@ -13,7 +13,7 @@ The pipeline is composed in `.gitlab-ci.yml` and a set of templates under
 .gitlab-ci.yml               Parent: stages, includes, global vars, workflow rules
 .gitlab/ci/build.yml         gradle build (parallel:matrix per service)
 .gitlab/ci/test.yml          unit + integration tests, JaCoCo coverage
-.gitlab/ci/quality.yml       SonarQube quality gate
+.gitlab/ci/quality.yml       SonarCloud quality gate (sonarcloud.io)
 .gitlab/ci/security.yml      Trivy fs + image scan, SARIF artifacts
 .gitlab/ci/package.yml       Kaniko -> GCP Artifact Registry
 .gitlab/ci/deploy.yml        kubectl apply -> GKE dev / stage / prod
@@ -58,7 +58,7 @@ service**. Downstream stages (`package:image`, `security:image`) use
 | Container build                    | `docker build` on the agent    | **Kaniko** (rootless, no DinD needed)                     |
 | Registry                           | Local `circleguard/<svc>`      | **GCP Artifact Registry** with SA-key auth                |
 | Cluster                            | Local Kind                     | **GKE** dev / stage / prod (`KUBE_CONFIG_*` vars)         |
-| Code quality                       | none                           | **SonarQube** with quality-gate wait                      |
+| Code quality                       | none                           | **SonarCloud** (free public-project tier) with quality-gate wait |
 | Vulnerability scan                 | none                           | **Trivy** fs + image, SARIF + GitLab reports              |
 | OWASP scan                         | none                           | **ZAP baseline** post deploy-stage                        |
 | Coverage report                    | Jacoco HTML only               | **JaCoCo XML** -> Sonar + GitLab coverage badge           |
@@ -75,9 +75,9 @@ for everything else.
 
 | Name                  | Type     | Scope        | What it contains                                                                                      |
 |-----------------------|----------|--------------|-------------------------------------------------------------------------------------------------------|
-| `SONAR_HOST_URL`      | Variable | All          | URL of your Sonar instance, e.g. `https://sonarcloud.io`.                                             |
-| `SONAR_TOKEN`         | Variable (masked, protected) | All | Sonar user / project token with "Execute Analysis".                                    |
-| `SLACK_WEBHOOK_URL`   | Variable (masked, protected) | All | Slack Incoming Webhook URL for `#circleguard-cicd`.                                    |
+| `SONAR_HOST_URL`      | Variable | All          | Must be `https://sonarcloud.io`. See [`SONARCLOUD_SETUP.md`](SONARCLOUD_SETUP.md).                     |
+| `SONAR_TOKEN`         | Variable (masked, protected) | All | SonarCloud user token with "Execute Analysis" — generated from My Account -> Security. |
+| `SLACK_WEBHOOK_URL`   | Variable (masked, protected) | All | Slack Incoming Webhook URL for `#circleguard-ci`. See [`SLACK_SETUP.md`](SLACK_SETUP.md). |
 | `GCP_SA_KEY`          | File (masked, protected)     | All | JSON service-account key with `roles/artifactregistry.writer` + Trivy pull rights.     |
 | `GCP_PROJECT`         | Variable                     | All | GCP project ID hosting Artifact Registry (e.g. `circleguard-prod-123456`).             |
 | `GCP_AR_REGION`       | Variable                     | All | Artifact Registry region, e.g. `us-central1`.                                          |
@@ -91,6 +91,27 @@ To base64-encode a kubeconfig:
 ```bash
 base64 -w0 ~/.kube/config | pbcopy   # macOS: pipe to clipboard
 ```
+
+## Code quality (SonarCloud)
+
+Static analysis runs against **SonarCloud** (https://sonarcloud.io) —
+not a self-hosted SonarQube. The free public-project tier provides
+the same Quality Gate, security hotspots and PR decoration features
+without the operational overhead of the Helm chart that used to live
+in `infra/k8s/sonarqube/`.
+
+Project URL (after onboarding):
+https://sonarcloud.io/project/overview?id=espinosacodes_circle-guard-final
+
+Quality Gate badge for `README.md`:
+
+```markdown
+[![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=espinosacodes_circle-guard-final&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=espinosacodes_circle-guard-final)
+[![Coverage](https://sonarcloud.io/api/project_badges/measure?project=espinosacodes_circle-guard-final&metric=coverage)](https://sonarcloud.io/summary/new_code?id=espinosacodes_circle-guard-final)
+```
+
+One-time onboarding (org slug, project key, token, GitLab variables)
+is documented in [`SONARCLOUD_SETUP.md`](SONARCLOUD_SETUP.md).
 
 ## Required GitLab project settings
 

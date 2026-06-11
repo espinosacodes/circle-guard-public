@@ -1,12 +1,12 @@
 =================================================================
 CircleGuard — Live application demo
-Cluster: gke_circleguard-final-cfs-2026 (GKE, us-central1)
+Cluster: gke_circleguard-final-cfs-2026 (GKE Autopilot, us-central1)
 Namespace: circleguard-dev — 8 microservices + Postgres/Redis/Kafka/Neo4j/LDAP
-2026-06-11 01:57:24 UTC
+2026-06-11 02:04:26 UTC
 =================================================================
 
 === 1) Cluster sanity — pods in circleguard-dev ===
-  auth-service-955df98ff-n9d8d                       Running
+  auth-service-6d67bd7d7-44ggl                       Running
   dashboard-service-84d965969f-6qc6f                 Running
   file-service-6654f584c8-bggzg                      Running
   form-service-669d58d766-g6bcb                      Running
@@ -30,10 +30,10 @@ Namespace: circleguard-dev — 8 microservices + Postgres/Redis/Kafka/Neo4j/LDAP
   livenessState: UP
   ping      : UP
   readinessState: UP
-  (LDAP DOWN is a known config bug — localhost:389 vs openldap:389.
-   Local-user auth via Postgres still works — see step 3.)
+  Note: LDAP probe is DOWN — Spring's LdapHealthIndicator hits localhost:389
+  rather than the openldap svc. Local Postgres users still authenticate (step 4).
 
-=== 3) auth-service /actuator/health (gateway) ===
+=== 3) gateway-service /actuator/health ===
   overall   : UP
   diskSpace : UP
   livenessState: UP
@@ -43,54 +43,68 @@ Namespace: circleguard-dev — 8 microservices + Postgres/Redis/Kafka/Neo4j/LDAP
 
 === 4) POST /api/v1/auth/login as staff_guard ===
 {
+    "token": "eyJhbGciOiJIUzI1NiJ9.eyJwZXJtaXNzaW9ucyI6WyJST0xFX0dBVEVfU1RBRkYiXSwic3ViIjoiYmU0ZGMwNDQtZWQ4My00OTFjLTk5OWItYmM4MmIxMWNhNjZiIiwiaWF0IjoxNzgxMTQzNDY4LCJleHAiOjE3ODExNDcwNjh9.1Hgl0t3Xxq6OEmFp2EHGf9BwdS4XUPICeSq3ORkKqPg",
     "type": "Bearer",
-    "token": "eyJhbGciOiJIUzI1NiJ9.eyJwZXJtaXNzaW9ucyI6WyJST0xFX0dBVEVfU1RBRkYiXSwic3ViIjoiYmU0ZGMwNDQtZWQ4My00OTFjLTk5OWItYmM4MmIxMWNhNjZiIiwiaWF0IjoxNzgxMTQzMDQ2LCJleHAiOjE3ODExNDY2NDZ9.y8AK68MUMPp2qynHaNrqp42Ygr40iEV_USE1YHrGsis",
     "anonymousId": "be4dc044-ed83-491c-999b-bc82b11ca66b"
 }
-  ✓ Bearer JWT issued. anonymousId=be4dc044-ed83-491c-999b-bc82b11ca66b
-  ✓ Note: the JWT principal is the *anonymous* UUID, not the LDAP username — privacy by construction.
+  ✓ Bearer JWT issued. anonymousId = be4dc044-ed83-491c-999b-bc82b11ca66b
+  ✓ The JWT 'sub' is the *anonymous* UUID, not the staff username —
+    auth-service calls identity-service through a Resilience4j circuit breaker
+    to mint/lookup the anonymous ID. Privacy by construction.
 
 === 5) GET /api/v1/auth/qr/generate (with Bearer JWT) ===
 {
-    "expiresIn": "60",
-    "qrToken": "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJiZTRkYzA0NC1lZDgzLTQ5MWMtOTk5Yi1iYzgyYjExY2E2NmIiLCJpYXQiOjE3ODExNDMwNDcsImV4cCI6MTc4MTE0MzA0N30.ZqeQUYsAwFl2SD475gSMKnXNddLC4tlLVj2mGvun0do"
+    "qrToken": "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJiZTRkYzA0NC1lZDgzLTQ5MWMtOTk5Yi1iYzgyYjExY2E2NmIiLCJpYXQiOjE3ODExNDM0NjgsImV4cCI6MTc4MTE0MzUyOH0.olHMq_8nWPsIuRrJMMCI2SOCw4SlCMwgtWqwBjKoT6A",
+    "expiresIn": "60"
 }
+  ✓ Short-lived (60s) QR token, signed with a separate qr.secret —
+    NOT the same key as the session JWT, so even if the gate is compromised,
+    it cannot forge login sessions.
 
-=== 6) POST /api/v1/gate/validate with that QR token ===
-{
-    "valid": false,
-    "status": "RED",
-    "message": "Invalid or Expired Token"
-}
-  ✓ Gate enforces JWT exp/sig on every request — fail-closed on any error.
-  (The image deployed here generates exp==iat — a known build-time bug,
-   covered by tests in QrValidationServiceEdgeCasesTest. Next step forges a
-   valid token directly with the known QR_SECRET to prove the happy path.)
-
-=== 7) Forge a valid 60-second QR token (same shared QR_SECRET) ===
-  Forged token (truncated): eyJhbGciOiAiSFMyNTYifQ.eyJzdWIiOiAiYmU0ZGMwNDQtZWQ4My00OTFjL...
-
-  POST /api/v1/gate/validate ⇒
+=== 6) POST /api/v1/gate/validate with that QR token  →  HAPPY PATH ===
 {
     "valid": true,
     "status": "GREEN",
     "message": "Welcome to Campus"
 }
+  ✓ gateway-service verifies JWS signature + exp claim, then checks Redis
+    for the user's current health-status flag. Both clean ⇒ GREEN.
 
-=== 8) Health-risk path — flag user as CONTAGIED in Redis, retry gate ===
+=== 7) Replay an already-expired token  →  DENIED ===
+  Token issued in 2023, exp=2023-11-14T22:14:20Z (long since expired)
+{
+    "valid": false,
+    "status": "RED",
+    "message": "Invalid or Expired Token"
+}
+  ✓ Gate fails closed on expired tokens — covered by
+    QrValidationServiceEdgeCasesTest#rejectsExpiredToken.
+
+=== 8) Tamper a token (flip one signature byte)  →  DENIED ===
+{
+    "valid": false,
+    "status": "RED",
+    "message": "Invalid or Expired Token"
+}
+  ✓ HMAC signature mismatch — fails closed.
+
+=== 9) Health-risk path — flag user as CONTAGIED in Redis, retry gate ===
   Redis: SET user:status:be4dc044-ed83-491c-999b-bc82b11ca66b = CONTAGIED
-  POST /api/v1/gate/validate (token still valid, but user CONTAGIED) ⇒
+  POST /api/v1/gate/validate (token valid AND fresh, but user CONTAGIED) ⇒
 {
     "valid": false,
     "status": "RED",
     "message": "Access Denied: Health Risk Detected"
 }
   Redis: DEL user:status:be4dc044-ed83-491c-999b-bc82b11ca66b  (cleanup)
+  ✓ Same token, different health state ⇒ RED. The gate's verdict is a
+    function of (token validity) × (live Redis health flag) — no client trust.
 
 =================================================================
-Demo summary:
-  • auth-service issues JWT against Postgres-backed local users
-  • anonymousId comes from identity-service via Resilience4j CB
-  • gateway-service validates JWT signature/exp + checks Redis for health status
-  • GREEN ⇒ entry allowed, RED ⇒ entry denied (either invalid token OR risk flag)
+Recap — what this proves end-to-end:
+  • All 8 microservices running on GKE
+  • Auth: Postgres-local users → JWT (dual-chain ready for LDAP)
+  • Identity anonymization via Resilience4j-protected RPC
+  • Short-lived QR with separate signing key
+  • Gate verdict: signature + exp + live health flag, fail-closed on any error
 =================================================================

@@ -53,3 +53,20 @@ metadata:
 data:
   dashboard-service.json: |-
     {}
+---
+# Business metrics dashboard — product KPIs (promotions, check-ins,
+# active circles, promotion latency p95). Loaded by install.sh from
+# `business-metrics.json` in this directory; the placeholder body below
+# is only used if a fresh cluster receives `kubectl apply -f` before the
+# install script runs.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cg-dashboard-business
+  namespace: observability
+  labels:
+    grafana_dashboard: "1"
+    app.kubernetes.io/part-of: circleguard
+data:
+  business-metrics.json: |-
+    {}

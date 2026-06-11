@@ -2,6 +2,8 @@ package com.circleguard.promotion.controller;
 
 import com.circleguard.promotion.dto.HealthCenterPromotionRequest;
 import com.circleguard.promotion.dto.HealthCenterPromotionResponse;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.Timer;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -50,10 +52,22 @@ public class HealthCenterPromotionController {
     private static final Pattern REAL_NAME_PATTERN = Pattern.compile("[A-Z][a-z]+\\s+[A-Z][a-z]+");
 
     private final KafkaTemplate<String, Object> kafkaTemplate;
+    private final Counter promotionsCounter;
+    private final Timer promotionLatencyTimer;
 
     @PostMapping("/promote")
     @PreAuthorize("hasRole('HEALTH_CENTER_OFFICER')")
     public ResponseEntity<?> promote(@Valid @RequestBody HealthCenterPromotionRequest body) {
+        try {
+            return promotionLatencyTimer.recordCallable(() -> doPromote(body));
+        } catch (Exception e) {
+            // recordCallable forces a checked-exception signature; the body
+            // we pass in never throws, so this branch is defensive only.
+            throw new IllegalStateException("Unexpected error during promote", e);
+        }
+    }
+
+    private ResponseEntity<?> doPromote(HealthCenterPromotionRequest body) {
         // ---- 1. Privacy guard: reject any real-name leakage --------------
         if (containsRealName(body.getReason()) || containsRealName(body.getEvidenceUrl())) {
             log.warn("Rejecting promotion request — real-name pattern detected (suspectHashId={})",
@@ -77,6 +91,10 @@ public class HealthCenterPromotionController {
         kafkaTemplate.send(TOPIC_PROMOTION_CONFIRMED, body.getSuspectHashId(), event);
         log.info("Emitted promotion.confirmed event correlationId={} suspectHashId={}",
                 correlationId, body.getSuspectHashId());
+
+        // Bump the business counter only after the side-effect succeeded so
+        // the metric reflects accepted promotions, not raw request volume.
+        promotionsCounter.increment();
 
         // ---- 3. 202 Accepted + correlation id for trace lookup -----------
         HealthCenterPromotionResponse response = HealthCenterPromotionResponse.builder()

@@ -1,13 +1,16 @@
 # =====================================================================
-# CircleGuard - Quality Stage (SonarQube)
+# CircleGuard - Quality Stage (SonarCloud)
 # =====================================================================
 # Uses the official sonar-scanner-cli image. Coverage is consumed from
 # JaCoCo XML artifacts uploaded by the test stage.
 #
-# Sonar settings live in sonar-project.properties at repo root.
+# Sonar settings live in sonar-project.properties at repo root and now
+# target SonarCloud (https://sonarcloud.io). See
+# docs/SONARCLOUD_SETUP.md for the one-time onboarding.
+#
 # Required CI/CD variables:
-#   - SONAR_HOST_URL   (e.g. https://sonarcloud.io or https://sonar.example.com)
-#   - SONAR_TOKEN      (masked + protected — issued in Sonar UI)
+#   - SONAR_HOST_URL   = https://sonarcloud.io
+#   - SONAR_TOKEN      (masked + protected — issued in SonarCloud UI)
 # =====================================================================
 
 sonarqube:check:

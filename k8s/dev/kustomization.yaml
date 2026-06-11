@@ -1,0 +1,359 @@
+# =============================================================================
+# Kustomization for the circleguard-dev environment
+# -----------------------------------------------------------------------------
+# This file is intentionally a thin wrapper — it does not rewrite the
+# existing plain manifests. It just ties them together and layers the
+# OpenTelemetry Java agent patch on top, so that:
+#
+#     kubectl apply -k k8s/dev/
+#
+# produces the same set of objects as the previous
+#
+#     kubectl apply -f k8s/dev/namespace.yml \
+#                   -f k8s/dev/dashboard-service-feature-toggles.yaml \
+#                   -f k8s/dev/infrastructure.yml \
+#                   -f k8s/dev/services.yml
+#
+# but with the OTel agent init container, shared emptyDir and OTLP env
+# vars added to every Spring Boot Deployment.
+#
+# Why inline patches and not `path: ../../infra/k8s/observability/...`
+#   Kustomize's default LoadRestrictionsRootOnly policy refuses to read
+#   patch files outside the kustomization root. We *could* require
+#   `--load-restrictor=LoadRestrictionsNone`, but that breaks the
+#   one-liner `kubectl apply -k k8s/dev/` (the flag is not accepted by
+#   `kubectl apply`, only `kubectl kustomize`).
+#
+#   The canonical, standalone version of the same patch lives at
+#   `infra/k8s/observability/otel-agent-patch.yaml` and can be applied
+#   directly with `kubectl apply -f` for users who prefer that path.
+#   Both files MUST be kept in sync — see the matching block markers
+#   below.
+# =============================================================================
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: circleguard-dev
+
+# Plain manifests are pulled in verbatim — Kustomize does not modify
+# them unless a patch below explicitly targets them.
+resources:
+  - namespace.yml
+  - dashboard-service-feature-toggles.yaml
+  - infrastructure.yml
+  - services.yml
+
+# -----------------------------------------------------------------------------
+# OpenTelemetry Java agent injection
+# -----------------------------------------------------------------------------
+# The same body is applied to every Spring Boot Deployment in the
+# namespace. Strategic-merge uses the container `name` as the merge key,
+# so we list one entry per Deployment with its container name updated.
+# All other fields are identical and could be DRY-ed up via a YAML anchor
+# in a single-document file, but Kustomize splits documents before
+# parsing — anchors do not survive — so we just repeat them.
+# -----------------------------------------------------------------------------
+patches:
+  - target: { group: apps, version: v1, kind: Deployment, name: auth-service }
+    patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: auth-service
+      spec:
+        template:
+          spec:
+            initContainers:
+              - name: otel-agent-init
+                image: ghcr.io/open-telemetry/opentelemetry-java-instrumentation/autoinstrumentation-java:2.5.0
+                imagePullPolicy: IfNotPresent
+                command: ["/bin/sh", "-c", "cp /javaagent.jar /otel/javaagent.jar && echo 'otel agent copied'"]
+                volumeMounts:
+                  - { name: otel-agent, mountPath: /otel }
+                resources:
+                  requests: { cpu: 10m, memory: 32Mi }
+                  limits:   { cpu: 100m, memory: 64Mi }
+            volumes:
+              - name: otel-agent
+                emptyDir: {}
+            containers:
+              - name: auth-service
+                volumeMounts:
+                  - { name: otel-agent, mountPath: /otel, readOnly: true }
+                env:
+                  - { name: JAVA_TOOL_OPTIONS,           value: "-javaagent:/otel/javaagent.jar" }
+                  - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: "http://jaeger-collector.observability.svc.cluster.local:4318" }
+                  - { name: OTEL_EXPORTER_OTLP_PROTOCOL, value: "http/protobuf" }
+                  - name: OTEL_SERVICE_NAME
+                    valueFrom: { fieldRef: { fieldPath: "metadata.labels['app']" } }
+                  - { name: OTEL_RESOURCE_ATTRIBUTES,    value: "deployment.environment=dev,service.namespace=circleguard" }
+                  - { name: OTEL_TRACES_SAMPLER,         value: "parentbased_traceidratio" }
+                  - { name: OTEL_TRACES_SAMPLER_ARG,     value: "0.1" }
+                  - { name: OTEL_METRICS_EXPORTER,       value: "none" }
+                  - { name: OTEL_LOGS_EXPORTER,          value: "none" }
+
+  - target: { group: apps, version: v1, kind: Deployment, name: identity-service }
+    patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: identity-service
+      spec:
+        template:
+          spec:
+            initContainers:
+              - name: otel-agent-init
+                image: ghcr.io/open-telemetry/opentelemetry-java-instrumentation/autoinstrumentation-java:2.5.0
+                imagePullPolicy: IfNotPresent
+                command: ["/bin/sh", "-c", "cp /javaagent.jar /otel/javaagent.jar && echo 'otel agent copied'"]
+                volumeMounts:
+                  - { name: otel-agent, mountPath: /otel }
+                resources:
+                  requests: { cpu: 10m, memory: 32Mi }
+                  limits:   { cpu: 100m, memory: 64Mi }
+            volumes:
+              - name: otel-agent
+                emptyDir: {}
+            containers:
+              - name: identity-service
+                volumeMounts:
+                  - { name: otel-agent, mountPath: /otel, readOnly: true }
+                env:
+                  - { name: JAVA_TOOL_OPTIONS,           value: "-javaagent:/otel/javaagent.jar" }
+                  - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: "http://jaeger-collector.observability.svc.cluster.local:4318" }
+                  - { name: OTEL_EXPORTER_OTLP_PROTOCOL, value: "http/protobuf" }
+                  - name: OTEL_SERVICE_NAME
+                    valueFrom: { fieldRef: { fieldPath: "metadata.labels['app']" } }
+                  - { name: OTEL_RESOURCE_ATTRIBUTES,    value: "deployment.environment=dev,service.namespace=circleguard" }
+                  - { name: OTEL_TRACES_SAMPLER,         value: "parentbased_traceidratio" }
+                  - { name: OTEL_TRACES_SAMPLER_ARG,     value: "0.1" }
+                  - { name: OTEL_METRICS_EXPORTER,       value: "none" }
+                  - { name: OTEL_LOGS_EXPORTER,          value: "none" }
+
+  - target: { group: apps, version: v1, kind: Deployment, name: form-service }
+    patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: form-service
+      spec:
+        template:
+          spec:
+            initContainers:
+              - name: otel-agent-init
+                image: ghcr.io/open-telemetry/opentelemetry-java-instrumentation/autoinstrumentation-java:2.5.0
+                imagePullPolicy: IfNotPresent
+                command: ["/bin/sh", "-c", "cp /javaagent.jar /otel/javaagent.jar && echo 'otel agent copied'"]
+                volumeMounts:
+                  - { name: otel-agent, mountPath: /otel }
+                resources:
+                  requests: { cpu: 10m, memory: 32Mi }
+                  limits:   { cpu: 100m, memory: 64Mi }
+            volumes:
+              - name: otel-agent
+                emptyDir: {}
+            containers:
+              - name: form-service
+                volumeMounts:
+                  - { name: otel-agent, mountPath: /otel, readOnly: true }
+                env:
+                  - { name: JAVA_TOOL_OPTIONS,           value: "-javaagent:/otel/javaagent.jar" }
+                  - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: "http://jaeger-collector.observability.svc.cluster.local:4318" }
+                  - { name: OTEL_EXPORTER_OTLP_PROTOCOL, value: "http/protobuf" }
+                  - name: OTEL_SERVICE_NAME
+                    valueFrom: { fieldRef: { fieldPath: "metadata.labels['app']" } }
+                  - { name: OTEL_RESOURCE_ATTRIBUTES,    value: "deployment.environment=dev,service.namespace=circleguard" }
+                  - { name: OTEL_TRACES_SAMPLER,         value: "parentbased_traceidratio" }
+                  - { name: OTEL_TRACES_SAMPLER_ARG,     value: "0.1" }
+                  - { name: OTEL_METRICS_EXPORTER,       value: "none" }
+                  - { name: OTEL_LOGS_EXPORTER,          value: "none" }
+
+  - target: { group: apps, version: v1, kind: Deployment, name: file-service }
+    patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: file-service
+      spec:
+        template:
+          spec:
+            initContainers:
+              - name: otel-agent-init
+                image: ghcr.io/open-telemetry/opentelemetry-java-instrumentation/autoinstrumentation-java:2.5.0
+                imagePullPolicy: IfNotPresent
+                command: ["/bin/sh", "-c", "cp /javaagent.jar /otel/javaagent.jar && echo 'otel agent copied'"]
+                volumeMounts:
+                  - { name: otel-agent, mountPath: /otel }
+                resources:
+                  requests: { cpu: 10m, memory: 32Mi }
+                  limits:   { cpu: 100m, memory: 64Mi }
+            volumes:
+              - name: otel-agent
+                emptyDir: {}
+            containers:
+              - name: file-service
+                volumeMounts:
+                  - { name: otel-agent, mountPath: /otel, readOnly: true }
+                env:
+                  - { name: JAVA_TOOL_OPTIONS,           value: "-javaagent:/otel/javaagent.jar" }
+                  - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: "http://jaeger-collector.observability.svc.cluster.local:4318" }
+                  - { name: OTEL_EXPORTER_OTLP_PROTOCOL, value: "http/protobuf" }
+                  - name: OTEL_SERVICE_NAME
+                    valueFrom: { fieldRef: { fieldPath: "metadata.labels['app']" } }
+                  - { name: OTEL_RESOURCE_ATTRIBUTES,    value: "deployment.environment=dev,service.namespace=circleguard" }
+                  - { name: OTEL_TRACES_SAMPLER,         value: "parentbased_traceidratio" }
+                  - { name: OTEL_TRACES_SAMPLER_ARG,     value: "0.1" }
+                  - { name: OTEL_METRICS_EXPORTER,       value: "none" }
+                  - { name: OTEL_LOGS_EXPORTER,          value: "none" }
+
+  - target: { group: apps, version: v1, kind: Deployment, name: promotion-service }
+    patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: promotion-service
+      spec:
+        template:
+          spec:
+            initContainers:
+              - name: otel-agent-init
+                image: ghcr.io/open-telemetry/opentelemetry-java-instrumentation/autoinstrumentation-java:2.5.0
+                imagePullPolicy: IfNotPresent
+                command: ["/bin/sh", "-c", "cp /javaagent.jar /otel/javaagent.jar && echo 'otel agent copied'"]
+                volumeMounts:
+                  - { name: otel-agent, mountPath: /otel }
+                resources:
+                  requests: { cpu: 10m, memory: 32Mi }
+                  limits:   { cpu: 100m, memory: 64Mi }
+            volumes:
+              - name: otel-agent
+                emptyDir: {}
+            containers:
+              - name: promotion-service
+                volumeMounts:
+                  - { name: otel-agent, mountPath: /otel, readOnly: true }
+                env:
+                  - { name: JAVA_TOOL_OPTIONS,           value: "-javaagent:/otel/javaagent.jar" }
+                  - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: "http://jaeger-collector.observability.svc.cluster.local:4318" }
+                  - { name: OTEL_EXPORTER_OTLP_PROTOCOL, value: "http/protobuf" }
+                  - name: OTEL_SERVICE_NAME
+                    valueFrom: { fieldRef: { fieldPath: "metadata.labels['app']" } }
+                  - { name: OTEL_RESOURCE_ATTRIBUTES,    value: "deployment.environment=dev,service.namespace=circleguard" }
+                  - { name: OTEL_TRACES_SAMPLER,         value: "parentbased_traceidratio" }
+                  - { name: OTEL_TRACES_SAMPLER_ARG,     value: "0.1" }
+                  - { name: OTEL_METRICS_EXPORTER,       value: "none" }
+                  - { name: OTEL_LOGS_EXPORTER,          value: "none" }
+
+  - target: { group: apps, version: v1, kind: Deployment, name: notification-service }
+    patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: notification-service
+      spec:
+        template:
+          spec:
+            initContainers:
+              - name: otel-agent-init
+                image: ghcr.io/open-telemetry/opentelemetry-java-instrumentation/autoinstrumentation-java:2.5.0
+                imagePullPolicy: IfNotPresent
+                command: ["/bin/sh", "-c", "cp /javaagent.jar /otel/javaagent.jar && echo 'otel agent copied'"]
+                volumeMounts:
+                  - { name: otel-agent, mountPath: /otel }
+                resources:
+                  requests: { cpu: 10m, memory: 32Mi }
+                  limits:   { cpu: 100m, memory: 64Mi }
+            volumes:
+              - name: otel-agent
+                emptyDir: {}
+            containers:
+              - name: notification-service
+                volumeMounts:
+                  - { name: otel-agent, mountPath: /otel, readOnly: true }
+                env:
+                  - { name: JAVA_TOOL_OPTIONS,           value: "-javaagent:/otel/javaagent.jar" }
+                  - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: "http://jaeger-collector.observability.svc.cluster.local:4318" }
+                  - { name: OTEL_EXPORTER_OTLP_PROTOCOL, value: "http/protobuf" }
+                  - name: OTEL_SERVICE_NAME
+                    valueFrom: { fieldRef: { fieldPath: "metadata.labels['app']" } }
+                  - { name: OTEL_RESOURCE_ATTRIBUTES,    value: "deployment.environment=dev,service.namespace=circleguard" }
+                  - { name: OTEL_TRACES_SAMPLER,         value: "parentbased_traceidratio" }
+                  - { name: OTEL_TRACES_SAMPLER_ARG,     value: "0.1" }
+                  - { name: OTEL_METRICS_EXPORTER,       value: "none" }
+                  - { name: OTEL_LOGS_EXPORTER,          value: "none" }
+
+  - target: { group: apps, version: v1, kind: Deployment, name: gateway-service }
+    patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: gateway-service
+      spec:
+        template:
+          spec:
+            initContainers:
+              - name: otel-agent-init
+                image: ghcr.io/open-telemetry/opentelemetry-java-instrumentation/autoinstrumentation-java:2.5.0
+                imagePullPolicy: IfNotPresent
+                command: ["/bin/sh", "-c", "cp /javaagent.jar /otel/javaagent.jar && echo 'otel agent copied'"]
+                volumeMounts:
+                  - { name: otel-agent, mountPath: /otel }
+                resources:
+                  requests: { cpu: 10m, memory: 32Mi }
+                  limits:   { cpu: 100m, memory: 64Mi }
+            volumes:
+              - name: otel-agent
+                emptyDir: {}
+            containers:
+              - name: gateway-service
+                volumeMounts:
+                  - { name: otel-agent, mountPath: /otel, readOnly: true }
+                env:
+                  - { name: JAVA_TOOL_OPTIONS,           value: "-javaagent:/otel/javaagent.jar" }
+                  - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: "http://jaeger-collector.observability.svc.cluster.local:4318" }
+                  - { name: OTEL_EXPORTER_OTLP_PROTOCOL, value: "http/protobuf" }
+                  - name: OTEL_SERVICE_NAME
+                    valueFrom: { fieldRef: { fieldPath: "metadata.labels['app']" } }
+                  - { name: OTEL_RESOURCE_ATTRIBUTES,    value: "deployment.environment=dev,service.namespace=circleguard" }
+                  - { name: OTEL_TRACES_SAMPLER,         value: "parentbased_traceidratio" }
+                  - { name: OTEL_TRACES_SAMPLER_ARG,     value: "0.1" }
+                  - { name: OTEL_METRICS_EXPORTER,       value: "none" }
+                  - { name: OTEL_LOGS_EXPORTER,          value: "none" }
+
+  - target: { group: apps, version: v1, kind: Deployment, name: dashboard-service }
+    patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: dashboard-service
+      spec:
+        template:
+          spec:
+            initContainers:
+              - name: otel-agent-init
+                image: ghcr.io/open-telemetry/opentelemetry-java-instrumentation/autoinstrumentation-java:2.5.0
+                imagePullPolicy: IfNotPresent
+                command: ["/bin/sh", "-c", "cp /javaagent.jar /otel/javaagent.jar && echo 'otel agent copied'"]
+                volumeMounts:
+                  - { name: otel-agent, mountPath: /otel }
+                resources:
+                  requests: { cpu: 10m, memory: 32Mi }
+                  limits:   { cpu: 100m, memory: 64Mi }
+            volumes:
+              - name: otel-agent
+                emptyDir: {}
+            containers:
+              - name: dashboard-service
+                volumeMounts:
+                  - { name: otel-agent, mountPath: /otel, readOnly: true }
+                env:
+                  - { name: JAVA_TOOL_OPTIONS,           value: "-javaagent:/otel/javaagent.jar" }
+                  - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: "http://jaeger-collector.observability.svc.cluster.local:4318" }
+                  - { name: OTEL_EXPORTER_OTLP_PROTOCOL, value: "http/protobuf" }
+                  - name: OTEL_SERVICE_NAME
+                    valueFrom: { fieldRef: { fieldPath: "metadata.labels['app']" } }
+                  - { name: OTEL_RESOURCE_ATTRIBUTES,    value: "deployment.environment=dev,service.namespace=circleguard" }
+                  - { name: OTEL_TRACES_SAMPLER,         value: "parentbased_traceidratio" }
+                  - { name: OTEL_TRACES_SAMPLER_ARG,     value: "0.1" }
+                  - { name: OTEL_METRICS_EXPORTER,       value: "none" }
+                  - { name: OTEL_LOGS_EXPORTER,          value: "none" }

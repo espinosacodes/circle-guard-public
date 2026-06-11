@@ -5,6 +5,9 @@ import com.circleguard.promotion.security.SecurityConfig;
 import com.circleguard.promotion.security.TestRoleAuthenticationFilter;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.Timer;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletRequest;
 import jakarta.servlet.ServletResponse;
@@ -13,7 +16,9 @@ import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
+import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.kafka.core.KafkaTemplate;
@@ -47,7 +52,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * touching SecurityContext) so the test-role filter can take over.</p>
  */
 @WebMvcTest(controllers = HealthCenterPromotionController.class)
-@Import({SecurityConfig.class, TestRoleAuthenticationFilter.class})
+@Import({SecurityConfig.class, TestRoleAuthenticationFilter.class, HealthCenterPromotionIT.MetricsTestConfig.class})
 @ActiveProfiles("test")
 @TestPropertySource(properties = {
         // Required by JwtAuthenticationFilter's constructor — even though the
@@ -163,5 +168,32 @@ class HealthCenterPromotionIT {
                 .andExpect(status().isUnprocessableEntity());
 
         verify(kafkaTemplate, never()).send(anyString(), any(), any());
+    }
+
+    /**
+     * The WebMvc slice does not auto-configure Actuator / Micrometer, so the
+     * {@code Counter} and {@code Timer} beans wired into the controller via
+     * {@link com.circleguard.promotion.metrics.BusinessMetricsConfig} are
+     * unavailable. We expose minimal in-memory equivalents here so the
+     * controller can be constructed and the production code path (including
+     * {@code timer.recordCallable(...)}) runs unchanged.
+     */
+    @TestConfiguration
+    static class MetricsTestConfig {
+        private final SimpleMeterRegistry registry = new SimpleMeterRegistry();
+
+        @Bean
+        Counter promotionsCounter() {
+            return Counter.builder("circleguard.promotions.total")
+                    .tag("source", "health-center")
+                    .register(registry);
+        }
+
+        @Bean
+        Timer promotionLatencyTimer() {
+            return Timer.builder("circleguard.promotion.latency")
+                    .tag("source", "health-center")
+                    .register(registry);
+        }
     }
 }

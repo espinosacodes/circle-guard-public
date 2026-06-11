@@ -35,4 +35,7 @@ dependencies {
     testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
     testImplementation("com.squareup.okhttp3:okhttp:4.12.0")
     testImplementation("org.awaitility:awaitility:4.2.1")
+
+    // --- Req 7 bonus: Consumer-Driven Contract test (Pact) ---
+    testImplementation("au.com.dius.pact.consumer:junit5:4.6.14")
 }
