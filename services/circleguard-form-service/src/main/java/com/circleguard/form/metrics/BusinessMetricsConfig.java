@@ -42,7 +42,7 @@ public class BusinessMetricsConfig {
         return DistributionSummary.builder(SYMPTOM_SEVERITY_SUMMARY_NAME)
                 .description("Symptom severity score, 0 (asymptomatic) to 10 (severe)")
                 .baseUnit("score")
-                .minimumExpectedValue(0.0)
+                .minimumExpectedValue(1.0)
                 .maximumExpectedValue(10.0)
                 .publishPercentiles(0.5, 0.95)
                 .register(registry);
