@@ -19,6 +19,7 @@ metadata:
   name: observability
   labels:
     name: observability
+    istio-injection: enabled
     # PSA — see header comment for the privileged rationale.
     pod-security.kubernetes.io/enforce: privileged
     pod-security.kubernetes.io/enforce-version: latest

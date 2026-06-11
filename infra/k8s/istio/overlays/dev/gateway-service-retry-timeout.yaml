@@ -1,0 +1,21 @@
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: gateway-service-retries
+  namespace: circleguard-dev
+  labels:
+    app.kubernetes.io/part-of: circleguard
+    app.kubernetes.io/component: resilience
+spec:
+  hosts:
+    - gateway-service.circleguard-dev.svc.cluster.local
+  http:
+    - route:
+        - destination:
+            host: gateway-service.circleguard-dev.svc.cluster.local
+      timeout: 2s
+      retries:
+        attempts: 3
+        perTryTimeout: 600ms
+        retryOn: "5xx,gateway-error,connect-failure,reset"
+        retryRemoteLocalities: false

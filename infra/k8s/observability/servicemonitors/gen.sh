@@ -39,8 +39,8 @@ metadata:
     app.kubernetes.io/part-of: circleguard
     app.kubernetes.io/component: ${svc}
 spec:
-  # Look for Service objects in any circleguard-* namespace whose Pods
-  # carry the standard app.kubernetes.io/name label.
+  # Look for Service objects in any circleguard-* namespace using the
+  # deployment labels defined by k8s/dev/services.yml.
   namespaceSelector:
     matchNames:
       - circleguard-dev
@@ -48,7 +48,7 @@ spec:
       - circleguard-master
   selector:
     matchLabels:
-      app.kubernetes.io/name: circleguard-${svc}-service
+      app: ${svc}-service
   endpoints:
     - port: http              # Service must expose an "http" named port
       path: /actuator/prometheus
@@ -56,10 +56,20 @@ spec:
       scrapeTimeout: 10s
       honorLabels: true
       relabelings:
-        # Promote the Pod's app label as the "app" series label so all our
+        # Use service DNS rather than a Pod IP so Istio can resolve the
+        # destination identity and originate mTLS from Prometheus.
+        - action: replace
+          sourceLabels:
+            - __meta_kubernetes_service_name
+            - __meta_kubernetes_namespace
+            - __meta_kubernetes_endpoint_port_number
+          regex: (.+);(.+);(.+)
+          replacement: \$1.\$2.svc.cluster.local:\$3
+          targetLabel: __address__
+        # Preserve the Pod's app label as the "app" series label so all our
         # PromQL queries can rely on a single, short label name.
         - action: replace
-          sourceLabels: [__meta_kubernetes_pod_label_app_kubernetes_io_name]
+          sourceLabels: [__meta_kubernetes_pod_label_app]
           targetLabel: app
         - action: replace
           sourceLabels: [__meta_kubernetes_namespace]

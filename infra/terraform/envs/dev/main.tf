@@ -20,9 +20,10 @@ module "network" {
 module "iam" {
   source = "../../modules/gcp-iam"
 
-  project_prefix = var.project_prefix
-  env            = var.env
-  gcp_project_id = var.gcp_project_id
+  project_prefix                         = var.project_prefix
+  env                                    = var.env
+  gcp_project_id                         = var.gcp_project_id
+  create_workload_identity_pool_bindings = false
 
   workload_identity_bindings = [
     {
@@ -56,6 +57,12 @@ module "gke" {
   preemptible          = var.gke_preemptible
   node_service_account = module.iam.gke_node_service_account_email
   deletion_protection  = false
+}
+
+resource "google_service_account_iam_member" "app_workload_identity" {
+  service_account_id = "projects/${var.gcp_project_id}/serviceAccounts/${module.iam.workload_identity_service_accounts["circleguard_app"]}"
+  role               = "roles/iam.workloadIdentityUser"
+  member             = "serviceAccount:${module.gke.workload_identity_pool}[circleguard/app]"
 }
 
 # --- Cloud SQL ---

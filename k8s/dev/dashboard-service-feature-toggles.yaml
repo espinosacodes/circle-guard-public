@@ -28,23 +28,3 @@ data:
   # DEV: experimental endpoints ON so we can validate them.
   FEATURES_GRAPHQL_ENDPOINT_ENABLED: "true"
   FEATURES_HOTSPOT_MAP_ENABLED: "true"
----
-# Patch snippet — apply with:
-#   kubectl -n circleguard-dev patch deployment dashboard-service \
-#     --patch-file k8s/dev/dashboard-service-feature-toggles.yaml \
-#     --type strategic
-# Or copy these envFrom lines into k8s/dev/services.yml under the dashboard
-# container spec.
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: dashboard-service
-  namespace: circleguard-dev
-spec:
-  template:
-    spec:
-      containers:
-        - name: dashboard-service
-          envFrom:
-            - configMapRef:
-                name: dashboard-service-feature-toggles

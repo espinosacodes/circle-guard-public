@@ -76,7 +76,9 @@ resource "google_service_account" "workload" {
 }
 
 resource "google_service_account_iam_member" "workload_binding" {
-  for_each = { for w in var.workload_identity_bindings : "${w.k8s_namespace}_${w.k8s_sa}" => w }
+  for_each = var.create_workload_identity_pool_bindings ? {
+    for w in var.workload_identity_bindings : "${w.k8s_namespace}_${w.k8s_sa}" => w
+  } : {}
 
   service_account_id = google_service_account.workload[each.key].name
   role               = "roles/iam.workloadIdentityUser"

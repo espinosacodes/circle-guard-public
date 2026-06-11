@@ -48,8 +48,8 @@ spec:
     spec:
       containers:
         - name: auth-service
-          image: circleguard/auth-service:latest
-          imagePullPolicy: Never
+          image: us-central1-docker.pkg.dev/circleguard-final-cfs-2026/circleguard-dev-docker/auth-service:dev
+          imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8180
           envFrom:
@@ -66,11 +66,14 @@ kind: Service
 metadata:
   name: auth-service
   namespace: circleguard-dev
+  labels:
+    app: auth-service
 spec:
   selector:
     app: auth-service
   ports:
-    - port: 8180
+    - name: http
+      port: 8180
       targetPort: 8180
   type: ClusterIP
 ---
@@ -96,8 +99,8 @@ spec:
     spec:
       containers:
         - name: identity-service
-          image: circleguard/identity-service:latest
-          imagePullPolicy: Never
+          image: us-central1-docker.pkg.dev/circleguard-final-cfs-2026/circleguard-dev-docker/identity-service:dev
+          imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8083
           envFrom:
@@ -112,11 +115,14 @@ kind: Service
 metadata:
   name: identity-service
   namespace: circleguard-dev
+  labels:
+    app: identity-service
 spec:
   selector:
     app: identity-service
   ports:
-    - port: 8083
+    - name: http
+      port: 8083
       targetPort: 8083
   type: ClusterIP
 ---
@@ -142,8 +148,8 @@ spec:
     spec:
       containers:
         - name: form-service
-          image: circleguard/form-service:latest
-          imagePullPolicy: Never
+          image: us-central1-docker.pkg.dev/circleguard-final-cfs-2026/circleguard-dev-docker/form-service:dev
+          imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8086
           envFrom:
@@ -158,12 +164,58 @@ kind: Service
 metadata:
   name: form-service
   namespace: circleguard-dev
+  labels:
+    app: form-service
 spec:
   selector:
     app: form-service
   ports:
-    - port: 8086
+    - name: http
+      port: 8086
       targetPort: 8086
+  type: ClusterIP
+---
+# ========================
+# File Service (port 8085)
+# ========================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: file-service
+  namespace: circleguard-dev
+  labels:
+    app: file-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: file-service
+  template:
+    metadata:
+      labels:
+        app: file-service
+    spec:
+      containers:
+        - name: file-service
+          image: us-central1-docker.pkg.dev/circleguard-final-cfs-2026/circleguard-dev-docker/file-service:dev
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8085
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: file-service
+  namespace: circleguard-dev
+  labels:
+    app: file-service
+spec:
+  selector:
+    app: file-service
+  ports:
+    - name: http
+      port: 8085
+      targetPort: 8085
   type: ClusterIP
 ---
 # ========================
@@ -188,8 +240,8 @@ spec:
     spec:
       containers:
         - name: promotion-service
-          image: circleguard/promotion-service:latest
-          imagePullPolicy: Never
+          image: us-central1-docker.pkg.dev/circleguard-final-cfs-2026/circleguard-dev-docker/promotion-service:dev
+          imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8088
           envFrom:
@@ -204,11 +256,14 @@ kind: Service
 metadata:
   name: promotion-service
   namespace: circleguard-dev
+  labels:
+    app: promotion-service
 spec:
   selector:
     app: promotion-service
   ports:
-    - port: 8088
+    - name: http
+      port: 8088
       targetPort: 8088
   type: ClusterIP
 ---
@@ -234,8 +289,8 @@ spec:
     spec:
       containers:
         - name: notification-service
-          image: circleguard/notification-service:latest
-          imagePullPolicy: Never
+          image: us-central1-docker.pkg.dev/circleguard-final-cfs-2026/circleguard-dev-docker/notification-service:dev
+          imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8082
           envFrom:
@@ -250,11 +305,14 @@ kind: Service
 metadata:
   name: notification-service
   namespace: circleguard-dev
+  labels:
+    app: notification-service
 spec:
   selector:
     app: notification-service
   ports:
-    - port: 8082
+    - name: http
+      port: 8082
       targetPort: 8082
   type: ClusterIP
 ---
@@ -280,8 +338,8 @@ spec:
     spec:
       containers:
         - name: gateway-service
-          image: circleguard/gateway-service:latest
-          imagePullPolicy: Never
+          image: us-central1-docker.pkg.dev/circleguard-final-cfs-2026/circleguard-dev-docker/gateway-service:dev
+          imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8087
           envFrom:
@@ -293,11 +351,14 @@ kind: Service
 metadata:
   name: gateway-service
   namespace: circleguard-dev
+  labels:
+    app: gateway-service
 spec:
   selector:
     app: gateway-service
   ports:
-    - port: 8087
+    - name: http
+      port: 8087
       targetPort: 8087
   type: ClusterIP
 ---
@@ -323,13 +384,15 @@ spec:
     spec:
       containers:
         - name: dashboard-service
-          image: circleguard/dashboard-service:latest
-          imagePullPolicy: Never
+          image: us-central1-docker.pkg.dev/circleguard-final-cfs-2026/circleguard-dev-docker/dashboard-service:dev
+          imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8084
           envFrom:
             - configMapRef:
                 name: circleguard-config
+            - configMapRef:
+                name: dashboard-service-feature-toggles
           env:
             - name: SPRING_DATASOURCE_URL
               value: "jdbc:postgresql://postgres:5432/circleguard_dashboard"
@@ -339,10 +402,13 @@ kind: Service
 metadata:
   name: dashboard-service
   namespace: circleguard-dev
+  labels:
+    app: dashboard-service
 spec:
   selector:
     app: dashboard-service
   ports:
-    - port: 8084
+    - name: http
+      port: 8084
       targetPort: 8084
   type: ClusterIP

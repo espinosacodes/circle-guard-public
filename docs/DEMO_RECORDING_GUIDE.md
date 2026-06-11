@@ -10,7 +10,7 @@
 
 Run through this list. If any check fails, fix it before pressing record — re-takes cost more than verification.
 
-- [ ] `gcloud config get-value project` returns `circleguard-final-92308`
+- [ ] `gcloud config get-value project` returns `circleguard-final-cfs-2026`
 - [ ] `gcloud container clusters list --region us-central1` shows `circleguard-dev-gke RUNNING`
 - [ ] `kubectl get nodes` returns ≥1 `Ready` node
 - [ ] `kubectl get ns | grep observability` shows the namespace exists
@@ -159,7 +159,7 @@ These go into the final report as embedded images. **Capture them once, name the
 | `screenshots/final/15-gcp-billing.png` | GCP Billing console showing project cost | Proves Bonus 4 |
 | `screenshots/final/16-looker-cost-dashboard.png` | Looker Studio cost dashboard | Proves Bonus 4 |
 | `screenshots/final/17-gke-clusters.png` | GCP Console → GKE → clusters list (showing dev cluster RUNNING) | Proves Req 2 — Terraform applied |
-| `screenshots/final/18-tf-state-bucket.png` | GCP Console → Cloud Storage → `circleguard-final-92308-tfstate` versioning ON | Proves Req 2 — remote state |
+| `screenshots/final/18-tf-state-bucket.png` | GCP Console → Cloud Storage → `circleguard-final-cfs-2026-tfstate` versioning ON | Proves Req 2 — remote state |
 | `screenshots/final/19-terraform-plan-zero-drift.png` | Terminal after `terraform plan` showing 0 to change | Proves Req 2 — idempotent |
 | `screenshots/final/20-protected-branches.png` | GitLab Settings → Repository → Protected branches | Proves CG-019 + Req 1 |
 | `screenshots/final/21-feature-toggle-flip.png` | curl response before+after toggling `graphql-endpoint-enabled` | Proves Req 3 — configuration pattern |

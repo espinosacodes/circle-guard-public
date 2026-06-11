@@ -26,6 +26,14 @@ resource "google_container_cluster" "this" {
   remove_default_node_pool = true
   initial_node_count       = 1
 
+  # The temporary default pool exists only while GKE creates the control plane.
+  # Use standard disks so regional clusters do not exhaust the default SSD quota.
+  node_config {
+    machine_type = "e2-medium"
+    disk_size_gb = 20
+    disk_type    = "pd-standard"
+  }
+
   network    = var.network
   subnetwork = var.subnetwork
 
@@ -83,6 +91,12 @@ resource "google_container_cluster" "this" {
   deletion_protection = var.deletion_protection
 
   resource_labels = local.default_labels
+
+  lifecycle {
+    # After the temporary default pool is removed, GKE reports the managed
+    # primary pool's node settings here. They are owned by the node-pool resource.
+    ignore_changes = [node_config]
+  }
 }
 
 resource "google_container_node_pool" "primary" {

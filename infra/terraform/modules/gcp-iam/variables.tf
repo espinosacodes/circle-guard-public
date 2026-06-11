@@ -27,3 +27,9 @@ variable "workload_identity_bindings" {
   }))
   default = []
 }
+
+variable "create_workload_identity_pool_bindings" {
+  description = "Create Kubernetes-to-GSA bindings. Disable when the GKE identity pool is created in the same root module and bind after the cluster exists."
+  type        = bool
+  default     = true
+}
