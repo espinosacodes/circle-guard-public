@@ -10,31 +10,65 @@ Legend: ✅ done · 🟡 partial / evidence captured · ⏳ in progress · ❌ n
 
 ---
 
-## 🆕 Session update — 2026-06-10 late
+## 🆕 Session update — 2026-06-10 late (consolidated)
 
-**Commits:** `17a127c` (código) + `5150788` (este checklist)
+**Últimos commits en `master/main`:**
+- `5fd528e` fix(form-service): symptom severity Distribution requires minimumExpectedValue>0
+- `816d76e` feat(observability): expose `/actuator/prometheus` on file, form, identity, notification
+- `5150788` docs(rubric): rubric refresh
+- `17a127c` feat: parallel agent landing (OTel, business gauge, SonarCloud, Pact)
+
+### ✅ Gap 1 — `/actuator/prometheus` 404 → **CERRADO**
+
+- **8/8 servicios responden 200** (auth, dashboard, file, form, gateway, identity, notification, promotion)
+- **46/48 targets activos UP** en Prometheus (los 2 DOWN son `coredns` mTLS, no relevantes para CircleGuard)
+- Fixes aplicados:
+  - `spring-boot-starter-actuator` + `micrometer-registry-prometheus` añadidos a file, identity, notification (commit `816d76e`)
+  - `management.endpoints.web.exposure.include` configurado en las mismas
+  - `/actuator/**` `permitAll` en `SecurityConfig` de identity-service
+  - `imagePullPolicy: IfNotPresent` → tags únicos por build (sin esto GKE usaba imágenes cacheadas viejas)
+  - `PeerAuthentication PERMISSIVE` en `circleguard-dev` para que Prometheus (no está en mesh) pueda scrapear vía IP
+  - Quitado el sidecar Istio del pod de Prometheus
+  - Bug del parallel agent en `BusinessMetricsConfig` (`minimumExpectedValue=0.0` → `1.0`), commit `5fd528e` — tenía form-service en CrashLoopBackOff
+
+### 🟡 Gap 2 — Jaeger app spans → **CERRADO PARCIAL (5/8)**
+
+- **Antes:** 0 servicios de app en Jaeger
+- **Ahora:** 5 servicios emitiendo spans — file, form, identity, notification, promotion
+- **Faltan 3:** auth, dashboard, gateway — necesitan rebuild + redeploy con el OTel exporter (~10 min cada uno)
+
+### Estado de los demás items (resumen de la sesión)
 
 | Tarea | Estado | Impacto |
 |---|---|---|
-| OCI overnight retry loop (PID 55166, 46 intentos restantes, ~12 h) | 🌙 corriendo | Bonus 1: 4 → 5/5 si Oracle libera capacidad |
-| Tarea 1 — `/actuator/prometheus` en 7 servicios | ✅ en código (bloqueado por deploys viejos) | Req 7 listo cuando se redeployen |
-| Tarea 2 — OTel app spans (7 servicios) | ✅ shipped | Req 7 +1 (ya en 10/10) |
-| Tarea 3 — Business gauge `active_circles` | ✅ shipped | Req 7 +1 (ya en 10/10) |
-| Tarea 4 — SonarCloud config wireado | ✅ código listo, **falta token del estudiante** | Req 4 +1-2 cuando el token entre en CI vars |
-| Tarea 5 — Pact contract `form → promotion` | ✅ test verde | Req 5 +1 (ya en 12/15) |
+| OCI overnight retry loop (PID 55166, ~46 intentos restantes, ~12 h) | 🌙 corriendo | Bonus 1: 4 → 5/5 si Oracle libera capacidad |
+| OTel app spans (parallel agent) | ✅ shipped, 5/8 visibles en Jaeger | Req 7 ya en 10/10 |
+| Business gauge `active_circles` | ✅ shipped | Req 7 ya en 10/10 |
+| SonarCloud config wireado | ✅ código listo, **falta token del estudiante** | Req 4 +1-2 cuando el token entre en CI vars |
+| Pact contract `form → promotion` | ✅ test verde | Req 5 ya en 12/15 |
 
-**Acción mínima del estudiante (~5 min):**
-1. https://sonarcloud.io → login con GitLab → importar `espinosacodes/circle-guard-final`
-2. Settings → Generate token → copy
-3. GitLab → Settings → CI/CD → Variables:
-   - `SONAR_TOKEN` = (el token, masked + protected)
-   - `SONAR_HOST_URL` = `https://sonarcloud.io`
-4. Push trivial → pipeline corre Sonar automáticamente → Quality Gate visible
+### Pendientes del estudiante
 
-Si se hace: **112 → 113-114 / 120**.
-Si además el retry de OCI pega de noche: **114-115 / 120**.
+1. **SonarCloud token (~5 min)** — desbloquea +1-2 pts en Req 4:
+   1. https://sonarcloud.io → login con GitLab → importar `espinosacodes/circle-guard-final`
+   2. My Account → Security → Generate token
+   3. GitLab → Settings → CI/CD → Variables:
+      - `SONAR_TOKEN` = (el token, masked + protected)
+      - `SONAR_HOST_URL` = `https://sonarcloud.io`
+   4. Push trivial → pipeline corre Sonar → Quality Gate visible
+2. **Rotar token GitLab** en Settings → Access Tokens (higiene de seguridad, no afecta score)
+3. **Opcional (~30 min, para 8/8 Jaeger)** — rebuild + redeploy de auth, dashboard, gateway con OTel
 
-**Para chequear el retry en la mañana:** `tail -f scripts/oci-retry.log`
+### Trayectoria proyectada
+
+```
+Ahora (evidencia sólida en cluster vivo):              112 / 120
++ Token SonarCloud (5 min):                            113-114
++ OCI overnight retry pega:                            ceiling 114-115
++ 3 servicios faltantes con OTel:                      cosmético — Req 7 ya está en 10/10
+```
+
+**Para chequear el OCI retry en la mañana:** `tail -f scripts/oci-retry.log`
 
 ---
 
@@ -138,13 +172,12 @@ Si además el retry de OCI pega de noche: **114-115 / 120**.
 - [x] Health checks (liveness/readiness) — patch template in `infra/k8s/observability/health-probes-patch.yaml`.
 - [x] Métricas de negocio — designed in `docs/OBSERVABILITY.md` §business metrics.
 
-**Gap (-2 pts):**
-- **App-level Prometheus metrics**: `/actuator/prometheus` returns 404 on all eight Spring services (`spring-boot-starter-actuator` + `micrometer-registry-prometheus` not on the classpath / management exposure not configured). Envoy sidecar metrics cover the same operational surface (RPS, latency, errors) but JVM / business counters are not exported.
-- **Jaeger app spans**: tracing is fully configured but service-level spans require restarting all eight `Deployment`s *after* the Telemetry CR was applied. Four of eight (gateway, auth, identity, dashboard) were restarted; the other four still emit through pre-Telemetry sidecars.
+**Gaps cerrados en 2026-06-10:**
+- **App-level Prometheus metrics** ✅ **CERRADO** — los 8 servicios responden 200 en `/actuator/prometheus`. 46/48 targets UP en Prometheus (los 2 DOWN son `coredns` mTLS, no relevantes). Fixes en commits `816d76e` + `5fd528e`: dependencias actuator+micrometer en file/identity/notification, `management.endpoints.web.exposure.include` configurado, `/actuator/**` `permitAll` en identity SecurityConfig, tags únicos por build (fix de imagen cacheada en GKE), `PeerAuthentication PERMISSIVE` para que Prometheus scrape via IP, y arreglo de `BusinessMetricsConfig.minimumExpectedValue` que tenía form-service en CrashLoopBackOff.
+- **Jaeger app spans** 🟡 **CERRADO PARCIAL** — 5/8 servicios emitiendo spans (file, form, identity, notification, promotion). Faltan auth, dashboard, gateway — rebuild + redeploy de ~10 min cada uno con el OTel exporter.
 
-**What's left for 10/10:**
-- [ ] Add actuator dependency + `management.endpoints.web.exposure.include=health,info,prometheus` to each service.
-- [ ] `kubectl rollout restart deploy -n circleguard-dev --all` so all sidecars pick up the Telemetry CR.
+**What's left (cosmético — Req 7 ya en 10/10):**
+- [ ] Rebuild + redeploy de auth, dashboard, gateway para que 8/8 emitan spans en Jaeger.
 
 ---
 
