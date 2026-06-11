@@ -19,7 +19,7 @@ Cross-references:
 |----------------------------------------------|-------------------------------------------------------------|--------------------|
 | GKE spot / preemptible node pools (dev+stage)| `infra/terraform/envs/dev/terraform.tfvars`, `envs/stage/terraform.tfvars` (`gke_preemptible = true`) | Spot VMs are 60–91 % cheaper than on-demand. Best fit for dev/stage where 24 h max lifetime is fine. |
 | Prod GKE on-demand                            | `infra/terraform/envs/prod/terraform.tfvars` (`gke_preemptible = false`) | Trade ~3× cost for SLO predictability. |
-| AKS spot pools (stage+prod)                   | `aks_spot_enabled = true` in stage and prod tfvars          | Azure spot is 60–80 % off list. Used for the multi-cloud bonus, not for stateful workloads. |
+| OCI Always-Free Ampere ARM (stage+prod)       | `node_shape = "VM.Standard.A1.Flex"` in `oci-oke` module    | $0/month forever for 4 OCPU + 24 GB. Replaces AKS spot for the multi-cloud bonus. See [`MULTICLOUD_OCI.md`](MULTICLOUD_OCI.md). |
 | Cloud SQL `db-f1-micro` in dev                | `cloudsql_tier = "db-f1-micro"` in dev tfvars               | Cheapest shared-core tier (~$8/mo) — fine for a single developer. |
 | Single-region (`us-central1`) non-prod        | All tfvars                                                  | Avoids inter-region egress (~$0.01/GiB), keeps storage class to a single region. |
 | Loki over ELK for log storage                 | `infra/k8s/observability/loki/`                             | Loki indexes labels only (not full text), so its object-store backend (`gs://…`) costs roughly **3× less** than running Elasticsearch hot-storage SSDs. |
@@ -48,31 +48,43 @@ amortised across all envs.
 | Logs/metrics (Loki+Prom) | GCS Standard, retention 14 d                      | $3       |
 | **Total**                |                                                   | **$30–60** |
 
-### Stage — **$120 – $180 / month**
+### Stage — **$110 – $150 / month**
 
 | Component                | Spec                                              | Est. /mo |
 |--------------------------|---------------------------------------------------|----------|
 | GKE control plane        | regional, billed                                  | $73      |
 | GKE nodes                | 1–4 × `e2-standard-2` **spot**                    | $7–30    |
 | Cloud SQL Postgres       | `db-custom-1-3840`                                | $30      |
-| AKS nodes                | 1–3 × `Standard_B2s` **spot**                     | $8–24    |
+| OKE (OCI) BASIC + 1 × A1.Flex worker | Always-Free quota (2 OCPU + 12 GB Ampere) | **$0**   |
 | Egress + NAT             | ~150 GiB                                          | $15      |
 | Logs/metrics             | 30 d retention                                    | $6       |
-| **Total**                |                                                   | **$120–180** |
+| **Total**                |                                                   | **$110–150** |
 
-### Prod — **$350 – $500 / month**
+### Prod — **$325 – $420 / month**
 
 | Component                | Spec                                              | Est. /mo |
 |--------------------------|---------------------------------------------------|----------|
 | GKE control plane        | regional                                          | $73      |
 | GKE nodes                | 2–6 × `e2-standard-4` **on-demand**               | $135–400 |
 | Cloud SQL Postgres       | `db-custom-2-7680` REGIONAL HA                    | $120     |
-| AKS nodes                | 2–6 × `Standard_D2s_v5` **spot**                  | $25–80   |
+| OKE (OCI) BASIC + 2 × A1.Flex workers | Always-Free quota (4 OCPU + 24 GB Ampere) | **$0**   |
+| OCI Flexible LB          | 10 Mbps Always-Free                               | **$0**   |
 | Egress + NAT             | ~500 GiB                                          | $40      |
 | Logs/metrics             | 90 d retention                                    | $20      |
-| **Total**                |                                                   | **$350–500** |
+| **Total**                |                                                   | **$325–420** |
 
-> If you need a defensible single number, use the midpoints: $45 / $150 / $425.
+> **OCI cost forecast.** As long as the worker pool stays inside
+> 4 OCPU / 24 GB Ampere (the Always-Free monthly quota), the entire
+> secondary cloud is **$0/month**. If a future override pushes us off
+> Always-Free — e.g. switching to `VM.Standard.E4.Flex` for AMD/x86
+> workloads or doubling node count — the next-cheapest configuration is
+> a paid OKE `BASIC_CLUSTER` (control plane still $0) plus one
+> `E4.Flex` 2-OCPU node at $0.013/OCPU·h ≈ **$8/mo on a 24×7 schedule**,
+> with the budget alert at $1 tripping on day 4. The detailed
+> Always-Free quota and pinned shapes live in
+> [`MULTICLOUD_OCI.md`](MULTICLOUD_OCI.md) §6.
+
+> If you need a defensible single number, use the midpoints: $45 / $130 / $370.
 
 ---
 
@@ -238,7 +250,7 @@ not guarantees.
 | Lever                                    | Baseline (no opt) | With opt | Savings | Source |
 |------------------------------------------|-------------------|----------|---------|--------|
 | GKE spot pools (dev+stage)               | $80/mo            | $25/mo   | **~68 %** | GCP pricing calculator, e2-standard-2, us-central1 |
-| AKS spot pools (stage+prod)              | $100/mo           | $25/mo   | **~75 %** | Azure spot advisor (`az vm list-skus … --query …`) |
+| OCI Ampere ARM Always-Free (stage+prod)  | $100/mo           | $0/mo    | **100 %** | OCI Always-Free tier (4 OCPU + 24 GB Ampere indefinite) |
 | Scale-to-zero dev (22:00–07:00 UTC)      | $30/mo            | $19/mo   | **~37 %** | 9 h × 365 / (24 h × 365) = 0.375 |
 | Loki over ELK (logs)                     | $30/mo            | $10/mo   | **~67 %** | Grafana Labs Loki vs Elasticsearch storage benchmark |
 | Cloud SQL stop overnight (dev)           | $8/mo             | $2/mo    | **~75 %** | GCP Cloud SQL pricing (storage only when stopped) |

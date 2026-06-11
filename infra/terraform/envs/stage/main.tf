@@ -8,6 +8,14 @@ provider "azurerm" {
   features {}
 }
 
+provider "oci" {
+  tenancy_ocid     = var.tenancy_ocid
+  user_ocid        = var.user_ocid
+  fingerprint      = var.oci_fingerprint
+  private_key_path = var.oci_private_key_path
+  region           = var.oci_region
+}
+
 # =====================================================
 # GCP (primary)
 # =====================================================
@@ -128,6 +136,46 @@ module "azure_acr" {
   aks_kubelet_identity_object_id = module.azure_aks.kubelet_identity_object_id
 }
 
+# =====================================================
+# OCI (secondary — multi-cloud, replaces Azure on this pivot)
+# Always-Free Ampere ARM worker pool, single AD (SWmf:SA-BOGOTA-1-AD-1).
+# =====================================================
+module "oci_network" {
+  source = "../../modules/oci-network"
+
+  project_prefix      = var.project_prefix
+  env                 = var.env
+  compartment_id      = var.compartment_id
+  vcn_cidr            = var.oci_vcn_cidr
+  public_subnet_cidr  = var.oci_public_subnet_cidr
+  private_subnet_cidr = var.oci_private_subnet_cidr
+}
+
+module "oci_oke" {
+  source = "../../modules/oci-oke"
+
+  project_prefix        = var.project_prefix
+  env                   = var.env
+  compartment_id        = var.compartment_id
+  vcn_id                = module.oci_network.vcn_id
+  public_subnet_id      = module.oci_network.public_subnet_id
+  private_subnet_id     = module.oci_network.private_subnet_id
+  kubernetes_version    = var.oke_kubernetes_version
+  node_image_id         = var.oke_node_image_id
+  node_count            = var.oke_node_count
+  region_for_kubeconfig = var.oci_region
+}
+
+module "oci_ocir" {
+  source = "../../modules/oci-ocir"
+
+  project_prefix    = var.project_prefix
+  env               = var.env
+  compartment_id    = var.compartment_id
+  tenancy_namespace = var.oci_tenancy_namespace
+  region_key        = var.oci_region
+}
+
 # --- Outputs ---
 output "gke_get_credentials_cmd" {
   value = "gcloud container clusters get-credentials ${module.gke.cluster_name} --region ${var.gcp_region} --project ${var.gcp_project_id}"
@@ -147,4 +195,16 @@ output "acr_login_server" {
 
 output "cloudsql_connection_name" {
   value = module.cloudsql.instance_connection_name
+}
+
+output "oke_cluster_name" {
+  value = module.oci_oke.cluster_name
+}
+
+output "oke_get_kubeconfig_cmd" {
+  value = module.oci_oke.get_kubeconfig_cmd
+}
+
+output "ocir_repo_url" {
+  value = module.oci_ocir.repository_root_url
 }

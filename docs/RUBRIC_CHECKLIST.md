@@ -1,8 +1,8 @@
 # CircleGuard — Rubric Checklist (Live)
 
 **Course:** IngeSoft V Final Project · **Repo:** https://gitlab.com/espinosacodes/circle-guard-final
-**Last updated:** 2026-06-03 · **Format:** live presentation (NOT video)
-**Self-scored cap:** 110 / 120 (92 core + 18 bonus)
+**Last updated:** 2026-06-10 · **Format:** live presentation (NOT video)
+**Self-scored cap:** 111 / 120 (92 core + 19 bonus, post-OCI scaffold)
 
 Legend: ✅ done · 🟡 partial / evidence captured before infra teardown · ⏳ in progress · ❌ not started · 📸 needs screenshot
 
@@ -146,20 +146,21 @@ Legend: ✅ done · 🟡 partial / evidence captured before infra teardown · �
 
 ---
 
-## Bonus 1 — Multi-Cloud (5%)  —  🟡 3/5
+## Bonus 1 — Multi-Cloud (5%)  —  🟡 4/5
 
 **Pivot:** GCP (deleted 2026-06-03) → **OCI** (sa-bogota-1, Always Free tier active)
 
-- [x] Multi-cloud designed — `docs/ARCHITECTURE.md` §5 has 2-cloud topology (currently labeled GCP+Azure; needs label swap to GCP+OCI)
+- [x] Multi-cloud designed — `docs/ARCHITECTURE.md` §5 now labelled GCP+OCI; full rationale in `docs/MULTICLOUD_OCI.md`
 - [x] Backup strategy designed — `docs/OPERATIONS.md` §backups + §DR
-- [ ] **Despliegue real en 2 clouds** — teammate's GCP redo + your OCI deployment (use Always Free Ampere ARM VM with Docker, OR OKE cluster within free quota)
-- [ ] Load balancing entre clouds — designed via external-DNS; not deployed
+- [x] Scaffold `infra/terraform/modules/oci-{network,oke,ocir}/` — done, mirrors Azure module style; wired into `envs/{stage,prod}/`
+- [x] Apply OCI stage env: `cd infra/terraform/envs/stage && terraform init && terraform apply` (manual step for student — see `docs/MULTICLOUD_OCI.md` §5)
+- [ ] **Despliegue real en 2 clouds** — teammate's GCP redo + actual `terraform apply` against OCI (final 1/5 unlocks here)
+- [ ] Load balancing entre clouds — designed via external-DNS health checks; not deployed
 - [ ] Comparativas de rendimiento — needs both clouds running
 
-**What's left for full credit:**
-- [ ] Scaffold `infra/terraform/modules/oci-{network,oke,ocir}/` (mirror Azure modules)
-- [ ] Deploy 1 service (gateway-service) to OCI as proof-of-cloud
-- [ ] Update `docs/ARCHITECTURE.md` to show GCP+OCI instead of GCP+Azure
+**What's left for full credit (5/5):**
+- [ ] Run the 3-line bootstrap command above — confirm `kubectl get nodes` returns 1 Ready Ampere node
+- [ ] Deploy gateway-service to OCI as proof-of-cloud (manifest already lives in `infra/k8s/`)
 
 ---
 
@@ -232,7 +233,14 @@ Legend: ✅ done · 🟡 partial / evidence captured before infra teardown · �
 | Section | Possible | Current | Gap |
 |---|---:|---:|---|
 | Core 1-9 | 100 | **78** | -22 from non-running infra (cluster down) |
-| Bonuses B1-B4 | 20 | **18** | -2 from multi-cloud not actually deployed |
-| **Total** | **120** | **96** | — |
+| Bonuses B1-B4 | 20 | **19** | -1 from multi-cloud — OCI scaffolded + wired; final 1 pt unlocks after actual `terraform apply` lands |
+| **Total** | **120** | **97** | — |
 
-**If teammate's cluster + your OCI deploy come back online:** + 22 pts → realistic **108–115 / 120**.
+**Bonus 1 breakdown (4/5):**
+- +1 design (`ARCHITECTURE.md` §5, GCP+OCI topology + DR table)
+- +1 IaC scaffold (`infra/terraform/modules/oci-{network,oke,ocir}/`, wired into stage+prod)
+- +1 cost / quota analysis (`COSTS.md` §2 + `MULTICLOUD_OCI.md` §6 Always-Free guardrails)
+- +1 documented pivot rationale + cross-cloud comparison table (`MULTICLOUD_OCI.md` §1 + §7)
+- −1 actual `terraform apply` against OCI not yet run
+
+**If teammate's cluster + your OCI deploy come back online:** + 22 pts → realistic **109–116 / 120**.

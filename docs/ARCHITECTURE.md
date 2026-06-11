@@ -12,6 +12,7 @@ zooms further into data, deployment, and cross-cutting concerns.
 > - [`PATTERNS.md`](PATTERNS.md) — design patterns referenced from §3.
 > - [`CHAOS_EXPERIMENTS.md`](CHAOS_EXPERIMENTS.md) — fault-injection plans.
 > - [`COSTS.md`](COSTS.md) — cost / capacity model behind §5.
+> - [`MULTICLOUD_OCI.md`](MULTICLOUD_OCI.md) — Bonus 1 multi-cloud, OCI pivot rationale and apply steps.
 
 ---
 
@@ -301,9 +302,21 @@ practical — see [`SECURITY.md`](SECURITY.md) §7.
 
 ## 5. Deployment topology (multi-cloud)
 
-Production runs on **GKE in `us-central1`** as primary, with **AKS in
-`eastus`** as warm-standby for the multi-cloud bonus. State storage and
-container images live in GCP; AKS pulls the same images cross-cloud.
+Production runs on **GKE in `us-central1`** as primary, with **OKE in
+`sa-bogota-1`** as warm-standby for the multi-cloud bonus. State storage
+and container images live in GCP; OKE pulls the same images cross-cloud
+from an OCIR mirror.
+
+> **Pivot note.** The original design called for AKS in `eastus` as the
+> secondary cloud. In the final week of the course the Azure Student
+> subscription was blocked by the campus tenant and we had no path to a
+> working `terraform apply` against AKS before the defense. We pivoted
+> to OCI's Always-Free Ampere ARM tier in `sa-bogota-1`, which is the
+> only major cloud that offers a permanently-free Kubernetes worker
+> shape. The Azure modules (`infra/terraform/modules/azure-{network,aks,acr}/`)
+> remain in the repo as proof of vendor-agnosticism — re-enabling Azure
+> is a one-tfvars-flip away. Full reasoning lives in
+> [`MULTICLOUD_OCI.md`](MULTICLOUD_OCI.md).
 
 ```mermaid
 flowchart TB
@@ -317,11 +330,11 @@ flowchart TB
         end
     end
 
-    subgraph AZ["Microsoft Azure (Secondary / DR)"]
-        subgraph AZEUS["eastus"]
-            AKS["AKS Cluster<br/>circleguard-prod-aks<br/>spot pool (cost-optimised)"]
-            ACR[("ACR<br/>circleguardacr.azurecr.io<br/>(geo-replicated mirror)")]
-            AZSQL[("Azure DB for PostgreSQL<br/>(read replica via logical replication)")]
+    subgraph OCI["Oracle Cloud Infrastructure (Secondary / DR)"]
+        subgraph OCISA["sa-bogota-1 (AD-1)"]
+            OKE["OKE BASIC_CLUSTER<br/>circleguard-prod-oke<br/>VM.Standard.A1.Flex (Always Free)"]
+            OCIR[("OCIR<br/>sa-bogota-1.ocir.io<br/>(skopeo-mirrored)")]
+            OBJ[("OCI Object Storage<br/>10 GB Always Free<br/>(file-service mirror)")]
         end
     end
 
@@ -337,43 +350,44 @@ flowchart TB
 
     USERS --> DNS
     DNS -- "primary" --> GKE
-    DNS -- "failover" --> AKS
+    DNS -- "failover" --> OKE
 
     AR -- "image pull" --> GKE
-    AR -- "image pull (cross-cloud)" --> AKS
-    ACR -- "fallback image pull" --> AKS
+    AR -- "image pull (cross-cloud)" --> OKE
+    OCIR -- "fallback image pull" --> OKE
 
-    CSQL -- "logical replication<br/>(async, RPO ≤ 5 min)" --> AZSQL
+    CSQL -- "GCS PITR snapshot<br/>(restore on DR, RPO ≤ 60 min)" --> OBJ
 
     TFD --> GKE
     TFS --> GKE
+    TFS --> OKE
     TFP --> GKE
-    TFP --> AKS
+    TFP --> OKE
     TFBK --> GCS
 
     classDef gcp fill:#dbeafe,stroke:#1e40af
-    classDef az fill:#fef3c7,stroke:#f59e0b
+    classDef oci fill:#fee2e2,stroke:#dc2626
     classDef tf fill:#dcfce7,stroke:#16a34a
     class GKE,CSQL,AR,GCS,SM gcp
-    class AKS,ACR,AZSQL az
+    class OKE,OCIR,OBJ oci
     class TFD,TFS,TFP,TFBK tf
 ```
 
 **Multi-cloud DR strategy** (referenced from [`OPERATIONS.md`](OPERATIONS.md) §6):
 
-| Concern            | Primary (GCP)                                | Secondary (Azure)                              | RPO       | RTO        |
-|--------------------|----------------------------------------------|------------------------------------------------|-----------|------------|
-| Compute            | GKE Autopilot, 3 zones in us-central1        | AKS spot pool, eastus                          | n/a       | < 15 min   |
-| Relational DB      | Cloud SQL REGIONAL HA + 7-day PITR           | Azure PG read-replica (logical replication)    | ≤ 5 min   | < 30 min   |
-| Object storage     | GCS multi-region                             | (none — file-service is bridged via GCS API)   | 0         | n/a        |
-| Container images   | Artifact Registry                            | ACR mirrored via `acr import` on every release | 0         | n/a        |
-| Secrets            | GCP Secret Manager                           | Azure Key Vault (manual seed at DR drill)      | n/a       | < 60 min   |
-| DNS                | Cloud DNS weighted records                   | Promoted to 100 % via runbook                  | n/a       | < 5 min    |
+| Concern            | Primary (GCP)                                | Secondary (OCI)                                       | RPO       | RTO        |
+|--------------------|----------------------------------------------|-------------------------------------------------------|-----------|------------|
+| Compute            | GKE Autopilot, 3 zones in us-central1        | OKE BASIC_CLUSTER, single AD `SWmf:SA-BOGOTA-1-AD-1`  | n/a       | < 15 min   |
+| Relational DB      | Cloud SQL REGIONAL HA + 7-day PITR           | (restored from GCS PITR snapshot during DR)           | ≤ 60 min  | < 60 min   |
+| Object storage     | GCS multi-region                             | OCI Object Storage mirror (10 GB Always-Free)         | ≤ 1 h     | < 30 min   |
+| Container images   | Artifact Registry                            | OCIR mirrored via `skopeo copy` on every release      | 0         | n/a        |
+| Secrets            | GCP Secret Manager                           | OCI Vault (manual seed at DR drill)                   | n/a       | < 60 min   |
+| DNS                | Cloud DNS weighted records                   | Promoted to 100 % via runbook + external-dns          | n/a       | < 5 min    |
 
-**Cost rationale** for the asymmetry (no AKS HA Postgres, no AKS hot
-standby) lives in [`COSTS.md`](COSTS.md) §1 and §5 — keeping AKS to a
-warm spot pool keeps the DR option open at ~10 % of the cost of a true
-active/active multi-cloud setup.
+**Cost rationale** for the asymmetry (no managed Postgres on OCI, no
+hot standby) lives in [`COSTS.md`](COSTS.md) §1 and §2 — sticking to
+the Always-Free Ampere shape keeps the DR option open at **$0/month**
+versus ~$425/mo for true active/active multi-cloud.
 
 ---
 
@@ -496,7 +510,7 @@ alternatives:
 | Decision                                    | Chose             | Rejected                  | Why                                                                       |
 |---------------------------------------------|-------------------|---------------------------|---------------------------------------------------------------------------|
 | Primary cloud                               | GCP               | AWS / Azure-only          | Free GKE control plane on dev; team familiarity; cheapest egress for us.  |
-| Secondary cloud (DR + bonus)                | Azure             | Self-managed colo / multi-region GCP | Real multi-cloud demonstrates vendor-independence; AKS spot is cheap.   |
+| Secondary cloud (DR + bonus)                | OCI (after Azure pivot) | Azure (blocked sub) / Self-managed colo / multi-region GCP | Real multi-cloud demonstrates vendor-independence; OCI Always-Free Ampere is $0/mo forever. See [`MULTICLOUD_OCI.md`](MULTICLOUD_OCI.md). |
 | Primary graph store                         | Neo4j             | Postgres + recursive CTEs | 3-hop traversal performance gap is orders of magnitude.                   |
 | Event bus                                   | Apache Kafka      | RabbitMQ / Pub/Sub        | Persistent log + replay required for audit / forensics.                   |
 | Cache                                       | Redis             | Memcached / in-JVM Caffeine| Need cross-pod TTL semantics for QR tokens.                              |
